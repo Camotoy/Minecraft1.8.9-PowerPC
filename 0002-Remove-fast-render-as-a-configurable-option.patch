@@ -1,0 +1,496 @@
+From 4a5dde2ec3769b41439fc3b7a6f6167916c1208e Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Thu, 28 Oct 2021 19:41:59 -0400
+Subject: [PATCH] Remove fast render as a configurable option
+
+Having it off is unusable on the testing iBook G4 - let's not even bother with it.
+---
+ .../TileEntityRendererDispatcher.java.orig    | 209 ------------------
+ .../TileEntityRendererDispatcher.java.rej     |  21 --
+ .../client/settings/GameSettings.java         |  16 +-
+ .../util/ClassInheritanceMultiMap.java.orig   | 130 -----------
+ .../util/ClassInheritanceMultiMap.java.rej    |  11 -
+ .../gui/GuiPerformanceSettingsOF.java         |   2 +-
+ 6 files changed, 9 insertions(+), 380 deletions(-)
+ delete mode 100644 src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.orig
+ delete mode 100644 src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.rej
+ delete mode 100644 src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.orig
+ delete mode 100644 src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.rej
+
+diff --git a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.orig b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.orig
+deleted file mode 100644
+index 94eac7f..0000000
+--- a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.orig
++++ /dev/null
+@@ -1,209 +0,0 @@
+-package net.minecraft.client.renderer.tileentity;
+-
+-import com.google.common.collect.Maps;
+-import java.util.Map;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.FontRenderer;
+-import net.minecraft.client.renderer.GlStateManager;
+-import net.minecraft.client.renderer.OpenGlHelper;
+-import net.minecraft.client.renderer.RenderHelper;
+-import net.minecraft.client.renderer.Tessellator;
+-import net.minecraft.client.renderer.texture.TextureManager;
+-import net.minecraft.client.renderer.texture.TextureMap;
+-import net.minecraft.client.renderer.tileentity.TileEntityBannerRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityBeaconRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityChestRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityEnchantmentTableRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityEndPortalRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityEnderChestRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityMobSpawnerRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntityPistonRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntitySignRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntitySkullRenderer;
+-import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
+-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+-import net.minecraft.crash.CrashReport;
+-import net.minecraft.crash.CrashReportCategory;
+-import net.minecraft.entity.Entity;
+-import net.minecraft.tileentity.TileEntity;
+-import net.minecraft.tileentity.TileEntityBanner;
+-import net.minecraft.tileentity.TileEntityBeacon;
+-import net.minecraft.tileentity.TileEntityChest;
+-import net.minecraft.tileentity.TileEntityEnchantmentTable;
+-import net.minecraft.tileentity.TileEntityEndPortal;
+-import net.minecraft.tileentity.TileEntityEnderChest;
+-import net.minecraft.tileentity.TileEntityMobSpawner;
+-import net.minecraft.tileentity.TileEntityPiston;
+-import net.minecraft.tileentity.TileEntitySign;
+-import net.minecraft.tileentity.TileEntitySkull;
+-import net.minecraft.util.BlockPos;
+-import net.minecraft.util.ReportedException;
+-import net.minecraft.world.World;
+-import net.optifine.EmissiveTextures;
+-import net.optifine.reflect.Reflector;
+-
+-public class TileEntityRendererDispatcher {
+-   public Map<Class<? extends TileEntity>, TileEntitySpecialRenderer<? extends TileEntity>> field_147559_m = Maps.<Class<? extends TileEntity>, TileEntitySpecialRenderer<? extends TileEntity>>newHashMap();
+-   public static TileEntityRendererDispatcher field_147556_a = new TileEntityRendererDispatcher();
+-   public FontRenderer field_147557_n;
+-   public static double field_147554_b;
+-   public static double field_147555_c;
+-   public static double field_147552_d;
+-   public TextureManager field_147553_e;
+-   public World field_147550_f;
+-   public Entity field_147551_g;
+-   public float field_147562_h;
+-   public float field_147563_i;
+-   public double field_147560_j;
+-   public double field_147561_k;
+-   public double field_147558_l;
+-   public TileEntity tileEntityRendered;
+-   private Tessellator batchBuffer = new Tessellator(2097152);
+-   private boolean drawingBatch = false;
+-
+-   private TileEntityRendererDispatcher() {
+-      this.field_147559_m.put(TileEntitySign.class, new TileEntitySignRenderer());
+-      this.field_147559_m.put(TileEntityMobSpawner.class, new TileEntityMobSpawnerRenderer());
+-      this.field_147559_m.put(TileEntityPiston.class, new TileEntityPistonRenderer());
+-      this.field_147559_m.put(TileEntityChest.class, new TileEntityChestRenderer());
+-      this.field_147559_m.put(TileEntityEnderChest.class, new TileEntityEnderChestRenderer());
+-      this.field_147559_m.put(TileEntityEnchantmentTable.class, new TileEntityEnchantmentTableRenderer());
+-      this.field_147559_m.put(TileEntityEndPortal.class, new TileEntityEndPortalRenderer());
+-      this.field_147559_m.put(TileEntityBeacon.class, new TileEntityBeaconRenderer());
+-      this.field_147559_m.put(TileEntitySkull.class, new TileEntitySkullRenderer());
+-      this.field_147559_m.put(TileEntityBanner.class, new TileEntityBannerRenderer());
+-
+-      for(TileEntitySpecialRenderer<?> tileentityspecialrenderer : this.field_147559_m.values()) {
+-         tileentityspecialrenderer.func_147497_a(this);
+-      }
+-
+-   }
+-
+-   public <T extends TileEntity> TileEntitySpecialRenderer<T> func_147546_a(Class<? extends TileEntity> p_147546_1_) {
+-      TileEntitySpecialRenderer<? extends TileEntity> tileentityspecialrenderer = (TileEntitySpecialRenderer)this.field_147559_m.get(p_147546_1_);
+-      if(tileentityspecialrenderer == null && p_147546_1_ != TileEntity.class) {
+-         tileentityspecialrenderer = this.<TileEntity>func_147546_a(p_147546_1_.getSuperclass());
+-         this.field_147559_m.put(p_147546_1_, tileentityspecialrenderer);
+-      }
+-
+-      return tileentityspecialrenderer;
+-   }
+-
+-   public <T extends TileEntity> TileEntitySpecialRenderer<T> func_147547_b(TileEntity p_147547_1_) {
+-      return p_147547_1_ != null && !p_147547_1_.func_145837_r()?this.func_147546_a(p_147547_1_.getClass()):null;
+-   }
+-
+-   public void func_178470_a(World p_178470_1_, TextureManager p_178470_2_, FontRenderer p_178470_3_, Entity p_178470_4_, float p_178470_5_) {
+-      if(this.field_147550_f != p_178470_1_) {
+-         this.func_147543_a(p_178470_1_);
+-      }
+-
+-      this.field_147553_e = p_178470_2_;
+-      this.field_147551_g = p_178470_4_;
+-      this.field_147557_n = p_178470_3_;
+-      this.field_147562_h = p_178470_4_.field_70126_B + (p_178470_4_.field_70177_z - p_178470_4_.field_70126_B) * p_178470_5_;
+-      this.field_147563_i = p_178470_4_.field_70127_C + (p_178470_4_.field_70125_A - p_178470_4_.field_70127_C) * p_178470_5_;
+-      this.field_147560_j = p_178470_4_.field_70142_S + (p_178470_4_.field_70165_t - p_178470_4_.field_70142_S) * (double)p_178470_5_;
+-      this.field_147561_k = p_178470_4_.field_70137_T + (p_178470_4_.field_70163_u - p_178470_4_.field_70137_T) * (double)p_178470_5_;
+-      this.field_147558_l = p_178470_4_.field_70136_U + (p_178470_4_.field_70161_v - p_178470_4_.field_70136_U) * (double)p_178470_5_;
+-   }
+-
+-   public void func_180546_a(TileEntity p_180546_1_, float p_180546_2_, int p_180546_3_) {
+-      if(p_180546_1_.func_145835_a(this.field_147560_j, this.field_147561_k, this.field_147558_l) < p_180546_1_.func_145833_n()) {
+-         boolean flag = true;
+-         if(Reflector.ForgeTileEntity_hasFastRenderer.exists()) {
+-            flag = !this.drawingBatch || !Reflector.callBoolean(p_180546_1_, Reflector.ForgeTileEntity_hasFastRenderer, new Object[0]);
+-         }
+-
+-         if(flag) {
+-            RenderHelper.func_74519_b();
+-            int i = this.field_147550_f.func_175626_b(p_180546_1_.func_174877_v(), 0);
+-            int j = i % 65536;
+-            int k = i / 65536;
+-            OpenGlHelper.func_77475_a(OpenGlHelper.field_77476_b, (float)j / 1.0F, (float)k / 1.0F);
+-            GlStateManager.func_179131_c(1.0F, 1.0F, 1.0F, 1.0F);
+-         }
+-
+-         BlockPos blockpos = p_180546_1_.func_174877_v();
+-         if(!this.field_147550_f.func_175668_a(blockpos, false)) {
+-            return;
+-         }
+-
+-         if(EmissiveTextures.isActive()) {
+-            EmissiveTextures.beginRender();
+-         }
+-
+-         this.func_178469_a(p_180546_1_, (double)blockpos.func_177958_n() - field_147554_b, (double)blockpos.func_177956_o() - field_147555_c, (double)blockpos.func_177952_p() - field_147552_d, p_180546_2_, p_180546_3_);
+-         if(EmissiveTextures.isActive()) {
+-            if(EmissiveTextures.hasEmissive()) {
+-               EmissiveTextures.beginRenderEmissive();
+-               this.func_178469_a(p_180546_1_, (double)blockpos.func_177958_n() - field_147554_b, (double)blockpos.func_177956_o() - field_147555_c, (double)blockpos.func_177952_p() - field_147552_d, p_180546_2_, p_180546_3_);
+-               EmissiveTextures.endRenderEmissive();
+-            }
+-
+-            EmissiveTextures.endRender();
+-         }
+-      }
+-
+-   }
+-
+-   public void func_147549_a(TileEntity p_147549_1_, double p_147549_2_, double p_147549_4_, double p_147549_6_, float p_147549_8_) {
+-      this.func_178469_a(p_147549_1_, p_147549_2_, p_147549_4_, p_147549_6_, p_147549_8_, -1);
+-   }
+-
+-   public void func_178469_a(TileEntity p_178469_1_, double p_178469_2_, double p_178469_4_, double p_178469_6_, float p_178469_8_, int p_178469_9_) {
+-      TileEntitySpecialRenderer<TileEntity> tileentityspecialrenderer = this.<TileEntity>func_147547_b(p_178469_1_);
+-      if(tileentityspecialrenderer != null) {
+-         try {
+-            this.tileEntityRendered = p_178469_1_;
+-            if(this.drawingBatch && Reflector.callBoolean(p_178469_1_, Reflector.ForgeTileEntity_hasFastRenderer, new Object[0])) {
+-               tileentityspecialrenderer.renderTileEntityFast(p_178469_1_, p_178469_2_, p_178469_4_, p_178469_6_, p_178469_8_, p_178469_9_, this.batchBuffer.func_178180_c());
+-            } else {
+-               tileentityspecialrenderer.func_180535_a(p_178469_1_, p_178469_2_, p_178469_4_, p_178469_6_, p_178469_8_, p_178469_9_);
+-            }
+-
+-            this.tileEntityRendered = null;
+-         } catch (Throwable throwable) {
+-            CrashReport crashreport = CrashReport.func_85055_a(throwable, "Rendering Block Entity");
+-            CrashReportCategory crashreportcategory = crashreport.func_85058_a("Block Entity Details");
+-            p_178469_1_.func_145828_a(crashreportcategory);
+-            throw new ReportedException(crashreport);
+-         }
+-      }
+-
+-   }
+-
+-   public void func_147543_a(World p_147543_1_) {
+-      this.field_147550_f = p_147543_1_;
+-   }
+-
+-   public FontRenderer func_147548_a() {
+-      return this.field_147557_n;
+-   }
+-
+-   public void preDrawBatch() {
+-      this.batchBuffer.func_178180_c().func_181668_a(7, DefaultVertexFormats.field_176600_a);
+-      this.drawingBatch = true;
+-   }
+-
+-   public void drawBatch(int p_drawBatch_1_) {
+-      this.field_147553_e.func_110577_a(TextureMap.field_110575_b);
+-      RenderHelper.func_74518_a();
+-      GlStateManager.func_179112_b(770, 771);
+-      GlStateManager.func_179147_l();
+-      GlStateManager.func_179129_p();
+-      if(Minecraft.func_71379_u()) {
+-         GlStateManager.func_179103_j(7425);
+-      } else {
+-         GlStateManager.func_179103_j(7424);
+-      }
+-
+-      if(p_drawBatch_1_ > 0) {
+-         this.batchBuffer.func_178180_c().func_181674_a((float)field_147554_b, (float)field_147555_c, (float)field_147552_d);
+-      }
+-
+-      this.batchBuffer.func_78381_a();
+-      RenderHelper.func_74519_b();
+-      this.drawingBatch = false;
+-   }
+-}
+diff --git a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.rej b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.rej
+deleted file mode 100644
+index 0adfd3d..0000000
+--- a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java.rej
++++ /dev/null
+@@ -1,21 +0,0 @@
+---- net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java
+-+++ net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java
+-@@ -72,15 +72,15 @@
+-    public <T extends TileEntity> TileEntitySpecialRenderer<T> func_147546_a(Class<? extends TileEntity> p_147546_1_) {
+-       TileEntitySpecialRenderer<? extends TileEntity> tileentityspecialrenderer = (TileEntitySpecialRenderer)this.field_147559_m.get(p_147546_1_);
+-       if(tileentityspecialrenderer == null && p_147546_1_ != TileEntity.class) {
+--         tileentityspecialrenderer = this.<TileEntity>func_147546_a(p_147546_1_.getSuperclass());
+-+         tileentityspecialrenderer = this.<TileEntity>func_147546_a((Class<? extends TileEntity>)p_147546_1_.getSuperclass());
+-          this.field_147559_m.put(p_147546_1_, tileentityspecialrenderer);
+-       }
+- 
+--      return tileentityspecialrenderer;
+-+      return (TileEntitySpecialRenderer<T>)tileentityspecialrenderer;
+-    }
+- 
+-    public <T extends TileEntity> TileEntitySpecialRenderer<T> func_147547_b(TileEntity p_147547_1_) {
+--      return p_147547_1_ == null?null:this.func_147546_a(p_147547_1_.getClass());
+-+      return (TileEntitySpecialRenderer<T>)(p_147547_1_ == null?null:this.func_147546_a(p_147547_1_.getClass()));
+-    }
+- 
+-    public void func_178470_a(World p_178470_1_, TextureManager p_178470_2_, FontRenderer p_178470_3_, Entity p_178470_4_, float p_178470_5_) {
+diff --git a/src/minecraft/net/minecraft/client/settings/GameSettings.java b/src/minecraft/net/minecraft/client/settings/GameSettings.java
+index daac690..b416d54 100644
+--- a/src/minecraft/net/minecraft/client/settings/GameSettings.java
++++ b/src/minecraft/net/minecraft/client/settings/GameSettings.java
+@@ -246,7 +246,7 @@ public class GameSettings
+     public boolean ofNaturalTextures = false;
+     public boolean ofEmissiveTextures = true;
+     public boolean ofFastMath = false;
+-    public boolean ofFastRender = false;
++    public final boolean ofFastRender = true; // iBook G4 crashes otherwise. Assuming other platforms do, too.
+     public int ofTranslucentBlocks = 0;
+     public boolean ofDynamicFov = true;
+     public boolean ofAlternateBlocks = true;
+@@ -1971,7 +1971,7 @@ public class GameSettings
+             MathHelper.fastMath = this.ofFastMath;
+         }
+ 
+-        if (p_setOptionValueOF_1_ == GameSettings.Options.FAST_RENDER)
++        /*if (p_setOptionValueOF_1_ == GameSettings.Options.FAST_RENDER)
+         {
+             if (!this.ofFastRender && Config.isShaders())
+             {
+@@ -1987,7 +1987,7 @@ public class GameSettings
+             }
+ 
+             Config.updateFramebufferSize();
+-        }
++        }*/
+ 
+         if (p_setOptionValueOF_1_ == GameSettings.Options.TRANSLUCENT_BLOCKS)
+         {
+@@ -2506,10 +2506,10 @@ public class GameSettings
+         {
+             return this.ofFastMath ? s + Lang.getOn() : s + Lang.getOff();
+         }
+-        else if (p_getKeyBindingOF_1_ == GameSettings.Options.FAST_RENDER)
++        /*else if (p_getKeyBindingOF_1_ == GameSettings.Options.FAST_RENDER)
+         {
+             return this.ofFastRender ? s + Lang.getOn() : s + Lang.getOff();
+-        }
++        }*/
+         else if (p_getKeyBindingOF_1_ == GameSettings.Options.TRANSLUCENT_BLOCKS)
+         {
+             return this.ofTranslucentBlocks == 1 ? s + Lang.getFast() : (this.ofTranslucentBlocks == 2 ? s + Lang.getFancy() : s + Lang.getDefault());
+@@ -2987,10 +2987,10 @@ public class GameSettings
+                         MathHelper.fastMath = this.ofFastMath;
+                     }
+ 
+-                    if (astring[0].equals("ofFastRender") && astring.length >= 2)
++                    /*if (astring[0].equals("ofFastRender") && astring.length >= 2)
+                     {
+                         this.ofFastRender = Boolean.valueOf(astring[1]).booleanValue();
+-                    }
++                    }*/
+ 
+                     if (astring[0].equals("ofTranslucentBlocks") && astring.length >= 2)
+                     {
+@@ -3165,7 +3165,7 @@ public class GameSettings
+         this.ofLazyChunkLoading = false;
+         this.ofRenderRegions = false;
+         this.ofFastMath = false;
+-        this.ofFastRender = false;
++        //this.ofFastRender = false;
+         this.ofTranslucentBlocks = 0;
+         this.ofDynamicFov = true;
+         this.ofAlternateBlocks = true;
+diff --git a/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.orig b/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.orig
+deleted file mode 100644
+index b8d007d..0000000
+--- a/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.orig
++++ /dev/null
+@@ -1,130 +0,0 @@
+-package net.minecraft.util;
+-
+-import com.google.common.collect.Iterators;
+-import com.google.common.collect.Lists;
+-import com.google.common.collect.Maps;
+-import com.google.common.collect.Sets;
+-import java.util.AbstractSet;
+-import java.util.Collections;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.Set;
+-import java.util.concurrent.ConcurrentHashMap;
+-import net.optifine.util.IteratorCache;
+-
+-public class ClassInheritanceMultiMap<T> extends AbstractSet<T> {
+-   private static final Set<Class<?>> field_181158_a = Collections.<Class<?>>newSetFromMap(new ConcurrentHashMap());
+-   private final Map<Class<?>, List<T>> field_180218_a = Maps.<Class<?>, List<T>>newHashMap();
+-   private final Set<Class<?>> field_180216_b = Sets.<Class<?>>newIdentityHashSet();
+-   private final Class<T> field_180217_c;
+-   private final List<T> field_181745_e = Lists.<T>newArrayList();
+-   public boolean empty;
+-
+-   public ClassInheritanceMultiMap(Class<T> p_i45909_1_) {
+-      this.field_180217_c = p_i45909_1_;
+-      this.field_180216_b.add(p_i45909_1_);
+-      this.field_180218_a.put(p_i45909_1_, this.field_181745_e);
+-
+-      for(Class<?> oclass : field_181158_a) {
+-         this.func_180213_a(oclass);
+-      }
+-
+-      this.empty = this.field_181745_e.size() == 0;
+-   }
+-
+-   protected void func_180213_a(Class<?> p_180213_1_) {
+-      field_181158_a.add(p_180213_1_);
+-      int i = this.field_181745_e.size();
+-
+-      for(int j = 0; j < i; ++j) {
+-         T t = this.field_181745_e.get(j);
+-         if(p_180213_1_.isAssignableFrom(t.getClass())) {
+-            this.func_181743_a(t, p_180213_1_);
+-         }
+-      }
+-
+-      this.field_180216_b.add(p_180213_1_);
+-   }
+-
+-   protected Class<?> func_181157_b(Class<?> p_181157_1_) {
+-      if(this.field_180217_c.isAssignableFrom(p_181157_1_)) {
+-         if(!this.field_180216_b.contains(p_181157_1_)) {
+-            this.func_180213_a(p_181157_1_);
+-         }
+-
+-         return p_181157_1_;
+-      } else {
+-         throw new IllegalArgumentException("Don\'t know how to search for " + p_181157_1_);
+-      }
+-   }
+-
+-   public boolean add(T p_add_1_) {
+-      for(Class<?> oclass : this.field_180216_b) {
+-         if(oclass.isAssignableFrom(p_add_1_.getClass())) {
+-            this.func_181743_a(p_add_1_, oclass);
+-         }
+-      }
+-
+-      this.empty = this.field_181745_e.size() == 0;
+-      return true;
+-   }
+-
+-   private void func_181743_a(T p_181743_1_, Class<?> p_181743_2_) {
+-      List<T> list = (List)this.field_180218_a.get(p_181743_2_);
+-      if(list == null) {
+-         this.field_180218_a.put(p_181743_2_, Lists.newArrayList(new Object[]{p_181743_1_}));
+-      } else {
+-         list.add(p_181743_1_);
+-      }
+-
+-      this.empty = this.field_181745_e.size() == 0;
+-   }
+-
+-   public boolean remove(Object p_remove_1_) {
+-      T t = p_remove_1_;
+-      boolean flag = false;
+-
+-      for(Class<?> oclass : this.field_180216_b) {
+-         if(oclass.isAssignableFrom(t.getClass())) {
+-            List<T> list = (List)this.field_180218_a.get(oclass);
+-            if(list != null && list.remove(t)) {
+-               flag = true;
+-            }
+-         }
+-      }
+-
+-      this.empty = this.field_181745_e.size() == 0;
+-      return flag;
+-   }
+-
+-   public boolean contains(Object p_contains_1_) {
+-      return Iterators.contains(this.func_180215_b(p_contains_1_.getClass()).iterator(), p_contains_1_);
+-   }
+-
+-   public <S> Iterable<S> func_180215_b(final Class<S> p_180215_1_) {
+-      return new Iterable<S>() {
+-         public Iterator<S> iterator() {
+-            List<T> list = (List)ClassInheritanceMultiMap.this.field_180218_a.get(ClassInheritanceMultiMap.this.func_181157_b(p_180215_1_));
+-            if(list == null) {
+-               return Iterators.<S>emptyIterator();
+-            } else {
+-               Iterator<T> iterator = list.iterator();
+-               return Iterators.filter(iterator, p_180215_1_);
+-            }
+-         }
+-      };
+-   }
+-
+-   public Iterator<T> iterator() {
+-      return (Iterator<T>)(this.field_181745_e.isEmpty()?Iterators.emptyIterator():IteratorCache.getReadOnly(this.field_181745_e));
+-   }
+-
+-   public int size() {
+-      return this.field_181745_e.size();
+-   }
+-
+-   public boolean isEmpty() {
+-      return this.empty;
+-   }
+-}
+diff --git a/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.rej b/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.rej
+deleted file mode 100644
+index 2d249ba..0000000
+--- a/src/minecraft/net/minecraft/util/ClassInheritanceMultiMap.java.rej
++++ /dev/null
+@@ -1,11 +0,0 @@
+---- net/minecraft/util/ClassInheritanceMultiMap.java
+-+++ net/minecraft/util/ClassInheritanceMultiMap.java
+-@@ -107,7 +107,7 @@
+-    }
+- 
+-    public Iterator<T> iterator() {
+--      return this.field_181745_e.isEmpty()?Iterators.emptyIterator():Iterators.unmodifiableIterator(this.field_181745_e.iterator());
+-+      return this.field_181745_e.isEmpty()?Iterators.<T>emptyIterator():Iterators.unmodifiableIterator(this.field_181745_e.iterator());
+-    }
+- 
+-    public int size() {
+diff --git a/src/minecraft/net/optifine/gui/GuiPerformanceSettingsOF.java b/src/minecraft/net/optifine/gui/GuiPerformanceSettingsOF.java
+index 6b44674..5750f28 100644
+--- a/src/minecraft/net/optifine/gui/GuiPerformanceSettingsOF.java
++++ b/src/minecraft/net/optifine/gui/GuiPerformanceSettingsOF.java
+@@ -11,7 +11,7 @@ public class GuiPerformanceSettingsOF extends GuiScreen
+     private GuiScreen prevScreen;
+     protected String title;
+     private GameSettings settings;
+-    private static GameSettings.Options[] enumOptions = new GameSettings.Options[] {GameSettings.Options.SMOOTH_FPS, GameSettings.Options.SMOOTH_WORLD, GameSettings.Options.FAST_RENDER, GameSettings.Options.FAST_MATH, GameSettings.Options.CHUNK_UPDATES, GameSettings.Options.CHUNK_UPDATES_DYNAMIC, GameSettings.Options.RENDER_REGIONS, GameSettings.Options.LAZY_CHUNK_LOADING, GameSettings.Options.SMART_ANIMATIONS};
++    private static GameSettings.Options[] enumOptions = new GameSettings.Options[] {GameSettings.Options.SMOOTH_FPS, GameSettings.Options.SMOOTH_WORLD, /*GameSettings.Options.FAST_RENDER,*/ GameSettings.Options.FAST_MATH, GameSettings.Options.CHUNK_UPDATES, GameSettings.Options.CHUNK_UPDATES_DYNAMIC, GameSettings.Options.RENDER_REGIONS, GameSettings.Options.LAZY_CHUNK_LOADING, GameSettings.Options.SMART_ANIMATIONS};
+     private TooltipManager tooltipManager = new TooltipManager(this, new TooltipProviderOptions());
+ 
+     public GuiPerformanceSettingsOF(GuiScreen guiscreen, GameSettings gamesettings)
+-- 
+2.35.3
+

@@ -1,0 +1,26 @@
+From 47fd66ca755c1fffa19370db66f5870766289a8b Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Wed, 3 Nov 2021 20:11:17 -0400
+Subject: [PATCH] Patch F5 render bug from VanillaFix
+
+---
+ .../net/minecraft/client/renderer/EntityRenderer.java          | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java b/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
+index 038d408..095bacf 100644
+--- a/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
+@@ -769,7 +769,8 @@ public class EntityRenderer implements IResourceManagerReloadListener
+                     f3 = f3 * 0.1F;
+                     f4 = f4 * 0.1F;
+                     f5 = f5 * 0.1F;
+-                    MovingObjectPosition movingobjectposition = this.mc.theWorld.rayTraceBlocks(new Vec3(d0 + (double)f3, d1 + (double)f4, d2 + (double)f5), new Vec3(d0 - d4 + (double)f3 + (double)f5, d1 - d6 + (double)f4, d2 - d5 + (double)f5));
++                    // https://github.com/DimensionalDevelopment/VanillaFix/blob/055e4b3d6cd8a54dcd7f9a73725a155efadd0b01/src/main/java/org/dimdev/vanillafix/bugs/mixins/client/MixinEntityRenderer.java
++                    MovingObjectPosition movingobjectposition = this.mc.theWorld.rayTraceBlocks(new Vec3(d0 + (double)f3, d1 + (double)f4, d2 + (double)f5), new Vec3(d0 - d4 + (double)f3 + (double)f5, d1 - d6 + (double)f4, d2 - d5 + (double)f5), false, true, true);
+ 
+                     if (movingobjectposition != null)
+                     {
+-- 
+2.35.3
+

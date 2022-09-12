@@ -1,0 +1,105 @@
+From 7dc2c7abde6dc45b32b78cd7515af2c16666a8e9 Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Thu, 28 Oct 2021 20:45:50 -0400
+Subject: [PATCH] Remove logs about missing reflections
+
+These are going to be missing, and Forge support will probably never be implemented.
+---
+ src/minecraft/net/optifine/reflect/FieldLocatorName.java     | 2 +-
+ src/minecraft/net/optifine/reflect/FieldLocatorType.java     | 2 +-
+ src/minecraft/net/optifine/reflect/FieldLocatorTypes.java    | 2 +-
+ src/minecraft/net/optifine/reflect/ReflectorClass.java       | 2 +-
+ src/minecraft/net/optifine/reflect/ReflectorConstructor.java | 2 +-
+ src/minecraft/net/optifine/reflect/ReflectorMethod.java      | 4 ++--
+ 6 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/src/minecraft/net/optifine/reflect/FieldLocatorName.java b/src/minecraft/net/optifine/reflect/FieldLocatorName.java
+index 48d87d0..b61e66d 100644
+--- a/src/minecraft/net/optifine/reflect/FieldLocatorName.java
++++ b/src/minecraft/net/optifine/reflect/FieldLocatorName.java
+@@ -32,7 +32,7 @@ public class FieldLocatorName implements IFieldLocator
+             }
+             catch (NoSuchFieldException var3)
+             {
+-                Log.log("(Reflector) Field not present: " + oclass.getName() + "." + this.targetFieldName);
++                //Log.dbg("(Reflector) Field not present: " + oclass.getName() + "." + this.targetFieldName);
+                 return null;
+             }
+             catch (SecurityException securityexception)
+diff --git a/src/minecraft/net/optifine/reflect/FieldLocatorType.java b/src/minecraft/net/optifine/reflect/FieldLocatorType.java
+index 8afd9f4..84eaaf4 100644
+--- a/src/minecraft/net/optifine/reflect/FieldLocatorType.java
++++ b/src/minecraft/net/optifine/reflect/FieldLocatorType.java
+@@ -54,7 +54,7 @@ public class FieldLocatorType implements IFieldLocator
+                     }
+                 }
+ 
+-                Log.log("(Reflector) Field not present: " + oclass.getName() + ".(type: " + this.targetFieldType + ", index: " + this.targetFieldIndex + ")");
++                //Log.dbg("(Reflector) Field not present: " + oclass.getName() + ".(type: " + this.targetFieldType + ", index: " + this.targetFieldIndex + ")");
+                 return null;
+             }
+             catch (SecurityException securityexception)
+diff --git a/src/minecraft/net/optifine/reflect/FieldLocatorTypes.java b/src/minecraft/net/optifine/reflect/FieldLocatorTypes.java
+index ac0c036..0b39405 100644
+--- a/src/minecraft/net/optifine/reflect/FieldLocatorTypes.java
++++ b/src/minecraft/net/optifine/reflect/FieldLocatorTypes.java
+@@ -30,7 +30,7 @@ public class FieldLocatorTypes implements IFieldLocator
+ 
+         if (l < 0)
+         {
+-            Log.log("(Reflector) Field not found: " + errorName);
++            //Log.dbg("(Reflector) Field not found: " + errorName);
+         }
+         else
+         {
+diff --git a/src/minecraft/net/optifine/reflect/ReflectorClass.java b/src/minecraft/net/optifine/reflect/ReflectorClass.java
+index c6930b8..4d24083 100644
+--- a/src/minecraft/net/optifine/reflect/ReflectorClass.java
++++ b/src/minecraft/net/optifine/reflect/ReflectorClass.java
+@@ -37,7 +37,7 @@ public class ReflectorClass implements IResolvable
+             }
+             catch (ClassNotFoundException var2)
+             {
+-                Log.log("(Reflector) Class not present: " + this.targetClassName);
++                //Log.dbg("(Reflector) Class not present: " + this.targetClassName);
+             }
+             catch (Throwable throwable)
+             {
+diff --git a/src/minecraft/net/optifine/reflect/ReflectorConstructor.java b/src/minecraft/net/optifine/reflect/ReflectorConstructor.java
+index 9cb2b44..c8b97ba 100644
+--- a/src/minecraft/net/optifine/reflect/ReflectorConstructor.java
++++ b/src/minecraft/net/optifine/reflect/ReflectorConstructor.java
+@@ -41,7 +41,7 @@ public class ReflectorConstructor implements IResolvable
+ 
+                     if (this.targetConstructor == null)
+                     {
+-                        Log.dbg("(Reflector) Constructor not present: " + oclass.getName() + ", params: " + ArrayUtils.arrayToString((Object[])this.parameterTypes));
++                        //Log.dbg("(Reflector) Constructor not present: " + oclass.getName() + ", params: " + ArrayUtils.arrayToString((Object[])this.parameterTypes));
+                     }
+ 
+                     if (this.targetConstructor != null)
+diff --git a/src/minecraft/net/optifine/reflect/ReflectorMethod.java b/src/minecraft/net/optifine/reflect/ReflectorMethod.java
+index 9bb7eff..4ea430e 100644
+--- a/src/minecraft/net/optifine/reflect/ReflectorMethod.java
++++ b/src/minecraft/net/optifine/reflect/ReflectorMethod.java
+@@ -56,7 +56,7 @@ public class ReflectorMethod implements IResolvable
+ 
+                         if (amethod.length <= 0)
+                         {
+-                            Log.log("(Reflector) Method not present: " + oclass.getName() + "." + this.targetMethodName);
++                            //Log.dbg("(Reflector) Method not present: " + oclass.getName() + "." + this.targetMethodName);
+                             return null;
+                         }
+ 
+@@ -82,7 +82,7 @@ public class ReflectorMethod implements IResolvable
+ 
+                     if (this.targetMethod == null)
+                     {
+-                        Log.log("(Reflector) Method not present: " + oclass.getName() + "." + this.targetMethodName);
++                        //Log.dbg("(Reflector) Method not present: " + oclass.getName() + "." + this.targetMethodName);
+                         return null;
+                     }
+                     else
+-- 
+2.35.3
+

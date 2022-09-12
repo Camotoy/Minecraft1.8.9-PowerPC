@@ -1,0 +1,629 @@
+From 00e444fdbf553b526f5d8888089664a23a0f34f7 Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Wed, 3 Nov 2021 14:10:29 -0400
+Subject: [PATCH] Touch on significant memory uses
+
+---
+ src/minecraft/net/minecraft/block/Block.java  | 12 +++---
+ .../net/minecraft/block/BlockLiquid.java      |  6 +--
+ .../net/minecraft/block/BlockStairs.java      |  4 +-
+ .../minecraft/client/model/ModelRenderer.java |  7 ++++
+ .../client/multiplayer/WorldClient.java       |  6 ++-
+ .../client/renderer/BlockModelRenderer.java   |  7 ++--
+ .../client/renderer/RegionRenderCache.java    | 10 +++--
+ .../renderer/entity/RendererLivingEntity.java |  2 +-
+ .../entity/layers/LayerArmorBase.java         |  9 ++++-
+ .../renderer/tileentity/RenderItemFrame.java  | 15 ++++----
+ .../tileentity/TileEntitySkullRenderer.java   |  5 ++-
+ .../net/minecraft/entity/Entity.java          |  8 +++-
+ .../minecraft/entity/item/EntityMinecart.java | 14 ++++---
+ .../entity/passive/EntityVillager.java        | 16 +++++---
+ .../minecraft/entity/player/EntityPlayer.java | 10 +++--
+ .../net/minecraft/network/PacketBuffer.java   | 38 ++++++++++++++++---
+ .../net/minecraft/world/ChunkCache.java       | 30 +++++++++------
+ .../net/minecraft/world/IBlockAccess.java     |  1 +
+ src/minecraft/net/optifine/DynamicLights.java | 12 ++++--
+ .../net/optifine/override/ChunkCacheOF.java   | 16 +++++---
+ 20 files changed, 153 insertions(+), 75 deletions(-)
+
+diff --git a/src/minecraft/net/minecraft/block/Block.java b/src/minecraft/net/minecraft/block/Block.java
+index ded548f..f684abb 100644
+--- a/src/minecraft/net/minecraft/block/Block.java
++++ b/src/minecraft/net/minecraft/block/Block.java
+@@ -447,15 +447,17 @@ public class Block
+     }
+ 
+     public int getMixedBrightnessForBlock(IBlockAccess worldIn, BlockPos pos)
++    { return this.getMixedBrightnessForBlock(worldIn, pos.getX(), pos.getY(), pos.getZ()); }
++    public int getMixedBrightnessForBlock(IBlockAccess worldIn, int x, int y, int z)
+     {
+-        Block block = worldIn.getBlockState(pos).getBlock();
+-        int i = worldIn.getCombinedLight(pos, block.getLightValue());
++        Block block = worldIn.getBlockState(x, y, z).getBlock();
++        int i = worldIn.getCombinedLight(x, y, z, block.getLightValue());
+ 
+         if (i == 0 && block instanceof BlockSlab)
+         {
+-            pos = pos.down();
+-            block = worldIn.getBlockState(pos).getBlock();
+-            return worldIn.getCombinedLight(pos, block.getLightValue());
++            --y;
++            block = worldIn.getBlockState(x, y, z).getBlock();
++            return worldIn.getCombinedLight(x, y, z, block.getLightValue());
+         }
+         else
+         {
+diff --git a/src/minecraft/net/minecraft/block/BlockLiquid.java b/src/minecraft/net/minecraft/block/BlockLiquid.java
+index 57109aa..bfa1ddd 100644
+--- a/src/minecraft/net/minecraft/block/BlockLiquid.java
++++ b/src/minecraft/net/minecraft/block/BlockLiquid.java
+@@ -207,10 +207,10 @@ public abstract class BlockLiquid extends Block
+         return this.blockMaterial == Material.water ? 5 : (this.blockMaterial == Material.lava ? (worldIn.provider.getHasNoSky() ? 10 : 30) : 0);
+     }
+ 
+-    public int getMixedBrightnessForBlock(IBlockAccess worldIn, BlockPos pos)
++    public int getMixedBrightnessForBlock(IBlockAccess worldIn, int x, int y, int z)
+     {
+-        int i = worldIn.getCombinedLight(pos, 0);
+-        int j = worldIn.getCombinedLight(pos.up(), 0);
++        int i = worldIn.getCombinedLight(x, y, z, 0);
++        int j = worldIn.getCombinedLight(x, y + 1, z, 0);
+         int k = i & 255;
+         int l = j & 255;
+         int i1 = i >> 16 & 255;
+diff --git a/src/minecraft/net/minecraft/block/BlockStairs.java b/src/minecraft/net/minecraft/block/BlockStairs.java
+index 595d4fc..84e6f5b 100644
+--- a/src/minecraft/net/minecraft/block/BlockStairs.java
++++ b/src/minecraft/net/minecraft/block/BlockStairs.java
+@@ -563,9 +563,9 @@ public class BlockStairs extends Block
+         this.modelBlock.onBlockDestroyedByPlayer(worldIn, pos, state);
+     }
+ 
+-    public int getMixedBrightnessForBlock(IBlockAccess worldIn, BlockPos pos)
++    public int getMixedBrightnessForBlock(IBlockAccess worldIn, int x, int y, int z)
+     {
+-        return this.modelBlock.getMixedBrightnessForBlock(worldIn, pos);
++        return this.modelBlock.getMixedBrightnessForBlock(worldIn, x, y, z);
+     }
+ 
+     /**
+diff --git a/src/minecraft/net/minecraft/client/model/ModelRenderer.java b/src/minecraft/net/minecraft/client/model/ModelRenderer.java
+index eacde15..dfc783d 100644
+--- a/src/minecraft/net/minecraft/client/model/ModelRenderer.java
++++ b/src/minecraft/net/minecraft/client/model/ModelRenderer.java
+@@ -406,10 +406,17 @@ public class ModelRenderer
+         GL11.glNewList(this.displayList, GL11.GL_COMPILE);
+         WorldRenderer worldrenderer = Tessellator.getInstance().getWorldRenderer();
+ 
++        /*boolean cullWasEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE); // https://github.com/Guichaguri/BetterFps/blob/1.8/src/main/java/me/guichaguri/betterfps/clones/client/ModelBoxLogic.java#L24 // todo breaks chicken legs
++        if (!cullWasEnabled) {
++            GlStateManager.enableCull();
++        }*/
+         for (int i = 0; i < this.cubeList.size(); ++i)
+         {
+             ((ModelBox)this.cubeList.get(i)).render(worldrenderer, scale);
+         }
++        /*if (!cullWasEnabled) {
++            GlStateManager.disableCull();
++        }*/
+ 
+         for (int j = 0; j < this.spriteList.size(); ++j)
+         {
+diff --git a/src/minecraft/net/minecraft/client/multiplayer/WorldClient.java b/src/minecraft/net/minecraft/client/multiplayer/WorldClient.java
+index 23db8db..392c111 100644
+--- a/src/minecraft/net/minecraft/client/multiplayer/WorldClient.java
++++ b/src/minecraft/net/minecraft/client/multiplayer/WorldClient.java
+@@ -478,12 +478,14 @@ public class WorldClient extends World
+     }
+ 
+     public int getCombinedLight(BlockPos pos, int lightValue)
++    { return this.getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public int getCombinedLight(int x, int y, int z, int lightValue)
+     {
+-        int i = super.getCombinedLight(pos, lightValue);
++        int i = super.getCombinedLight(x, y, z, lightValue);
+ 
+         if (Config.isDynamicLights())
+         {
+-            i = DynamicLights.getCombinedLight(pos, i);
++            i = DynamicLights.getCombinedLight(x, y, z, i);
+         }
+ 
+         return i;
+diff --git a/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java b/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
+index 41a4f21..7c0452b 100644
+--- a/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
+@@ -147,11 +147,12 @@ public class BlockModelRenderer
+ 
+             if (!list.isEmpty())
+             {
+-                BlockPos blockpos = p_renderModelFlat_4_.offset(enumfacing);
++                //BlockPos blockpos = p_renderModelFlat_4_.offset(enumfacing);
++                int x = p_renderModelFlat_4_.getX() + enumfacing.getFrontOffsetX(); int y = p_renderModelFlat_4_.getY() + enumfacing.getFrontOffsetY(); int z = p_renderModelFlat_4_.getZ() + enumfacing.getFrontOffsetZ();
+ 
+-                if (!p_renderModelFlat_6_ || block.shouldSideBeRendered(p_renderModelFlat_1_, blockpos, enumfacing))
++                if (!p_renderModelFlat_6_ || block.shouldSideBeRendered(p_renderModelFlat_1_, x, y, z, enumfacing))
+                 {
+-                    int i = block.getMixedBrightnessForBlock(p_renderModelFlat_1_, blockpos);
++                    int i = block.getMixedBrightnessForBlock(p_renderModelFlat_1_, x, y, z);
+                     list = BlockModelCustomizer.getRenderQuads(list, p_renderModelFlat_1_, p_renderModelFlat_3_, p_renderModelFlat_4_, enumfacing, enumworldblocklayer, 0L, renderenv);
+                     this.renderQuadsFlat(p_renderModelFlat_1_, p_renderModelFlat_3_, p_renderModelFlat_4_, enumfacing, i, false, p_renderModelFlat_5_, list, renderenv);
+                     flag = true;
+diff --git a/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java b/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
+index 2f686ba..5afac46 100644
+--- a/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
++++ b/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
+@@ -42,17 +42,19 @@ public class RegionRenderCache extends ChunkCache
+     }
+ 
+     public int getCombinedLight(BlockPos pos, int lightValue)
++    { return this.getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public int getCombinedLight(int x, int y, int z, int lightValue)
+     {
+-        int i = this.getPositionIndex(pos);
++        int i = this.getPositionIndex(x, y, z);
+         int j = this.combinedLights[i];
+ 
+         if (j == -1)
+         {
+-            j = super.getCombinedLight(pos, lightValue);
++            j = super.getCombinedLight(x, y, z, lightValue);
+ 
+-            if (Config.isDynamicLights() && !this.getBlockState(pos).getBlock().isOpaqueCube())
++            if (Config.isDynamicLights() && !this.getBlockState(x, y, z).getBlock().isOpaqueCube())
+             {
+-                j = DynamicLights.getCombinedLight(pos, j);
++                j = DynamicLights.getCombinedLight(x, y, z, j);
+             }
+ 
+             this.combinedLights[i] = j;
+diff --git a/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java b/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
+index fea0a33..056fb14 100644
+--- a/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
++++ b/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
+@@ -656,7 +656,7 @@ public abstract class RendererLivingEntity<T extends EntityLivingBase> extends R
+ 
+                 if (d0 < (double)(f * f))
+                 {
+-                    String s = entity.getDisplayName().getFormattedText();
++                    String s = entity.getDisplayName(false).getFormattedText();
+                     float f1 = 0.02666667F;
+                     GlStateManager.alphaFunc(516, 0.1F);
+ 
+diff --git a/src/minecraft/net/minecraft/client/renderer/entity/layers/LayerArmorBase.java b/src/minecraft/net/minecraft/client/renderer/entity/layers/LayerArmorBase.java
+index 035607a..8ac5d4c 100644
+--- a/src/minecraft/net/minecraft/client/renderer/entity/layers/LayerArmorBase.java
++++ b/src/minecraft/net/minecraft/client/renderer/entity/layers/LayerArmorBase.java
+@@ -207,9 +207,16 @@ public abstract class LayerArmorBase<T extends ModelBase> implements LayerRender
+         return this.getArmorResource(p_177181_1_, p_177181_2_, (String)null);
+     }
+ 
++    /** Armor type, layer, overlay */
+     private ResourceLocation getArmorResource(ItemArmor p_177178_1_, boolean p_177178_2_, String p_177178_3_)
+     {
+-        String s = String.format("textures/models/armor/%s_layer_%d%s.png", new Object[] {p_177178_1_.getArmorMaterial().getName(), Integer.valueOf(p_177178_2_ ? 2 : 1), p_177178_3_ == null ? "" : String.format("_%s", new Object[]{p_177178_3_})});
++        //String s = String.format("textures/models/armor/%s_layer_%d%s.png", new Object[] {p_177178_1_.getArmorMaterial().getName(), Integer.valueOf(p_177178_2_ ? 2 : 1), p_177178_3_ == null ? "" : String.format("_%s", new Object[]{p_177178_3_})});
++        String s;
++        if (p_177178_3_ == null) {
++            s = "textures/models/armor/" + p_177178_1_.getArmorMaterial().getName() + "_layer_" + (p_177178_2_ ? 2 : 1) + ".png";
++        } else {
++            s = "textures/models/armor/" + p_177178_1_.getArmorMaterial().getName() + "_layer_" + (p_177178_2_ ? 2 : 1) + "_" + p_177178_3_ + ".png";
++        }
+         ResourceLocation resourcelocation = (ResourceLocation)ARMOR_TEXTURE_RES_MAP.get(s);
+ 
+         if (resourcelocation == null)
+diff --git a/src/minecraft/net/minecraft/client/renderer/tileentity/RenderItemFrame.java b/src/minecraft/net/minecraft/client/renderer/tileentity/RenderItemFrame.java
+index bf2b787..7cf3e51 100644
+--- a/src/minecraft/net/minecraft/client/renderer/tileentity/RenderItemFrame.java
++++ b/src/minecraft/net/minecraft/client/renderer/tileentity/RenderItemFrame.java
+@@ -119,10 +119,11 @@ public class RenderItemFrame extends Render<EntityItemFrame>
+                 }
+             }
+ 
+-            EntityItem entityitem = new EntityItem(itemFrame.worldObj, 0.0D, 0.0D, 0.0D, itemstack);
+-            Item item = entityitem.getEntityItem().getItem();
+-            entityitem.getEntityItem().stackSize = 1;
+-            entityitem.hoverStart = 0.0F;
++            //EntityItem entityitem = new EntityItem(itemFrame.worldObj, 0.0D, 0.0D, 0.0D, itemstack);
++            Item item = itemstack.getItem();
++            itemstack.stackSize = 1;
++            //entityitem.getEntityItem().stackSize = 1;
++            //entityitem.hoverStart = 0.0F;
+             GlStateManager.pushMatrix();
+             GlStateManager.disableLighting();
+             int i = itemFrame.getRotation();
+@@ -143,7 +144,7 @@ public class RenderItemFrame extends Render<EntityItemFrame>
+                     float f = 0.0078125F;
+                     GlStateManager.scale(f, f, f);
+                     GlStateManager.translate(-64.0F, -64.0F, 0.0F);
+-                    MapData mapdata = Items.filled_map.getMapData(entityitem.getEntityItem(), itemFrame.worldObj);
++                    MapData mapdata = Items.filled_map.getMapData(itemstack, itemFrame.worldObj);
+                     GlStateManager.translate(0.0F, 0.0F, -1.0F);
+ 
+                     if (mapdata != null)
+@@ -179,14 +180,14 @@ public class RenderItemFrame extends Render<EntityItemFrame>
+ 
+                     GlStateManager.scale(0.5F, 0.5F, 0.5F);
+ 
+-                    if (!this.itemRenderer.shouldRenderItemIn3D(entityitem.getEntityItem()) || item instanceof ItemSkull)
++                    if (!this.itemRenderer.shouldRenderItemIn3D(itemstack) || item instanceof ItemSkull)
+                     {
+                         GlStateManager.rotate(180.0F, 0.0F, 1.0F, 0.0F);
+                     }
+ 
+                     GlStateManager.pushAttrib();
+                     RenderHelper.enableStandardItemLighting();
+-                    this.itemRenderer.func_181564_a(entityitem.getEntityItem(), ItemCameraTransforms.TransformType.FIXED);
++                    this.itemRenderer.func_181564_a(itemstack, ItemCameraTransforms.TransformType.FIXED);
+                     RenderHelper.disableStandardItemLighting();
+                     GlStateManager.popAttrib();
+ 
+diff --git a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySkullRenderer.java b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySkullRenderer.java
+index 7173be4..0f10c04 100644
+--- a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySkullRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySkullRenderer.java
+@@ -78,10 +78,11 @@ public class TileEntitySkullRenderer extends TileEntitySpecialRenderer<TileEntit
+                     {
+                         Minecraft minecraft = Minecraft.getMinecraft();
+                         Map<Type, MinecraftProfileTexture> map = minecraft.getSkinManager().loadSkinFromCache(p_180543_7_);
++                        MinecraftProfileTexture texture = map.get(Type.SKIN);
+ 
+-                        if (map.containsKey(Type.SKIN))
++                        if (texture != null)
+                         {
+-                            resourcelocation = minecraft.getSkinManager().loadSkin((MinecraftProfileTexture)map.get(Type.SKIN), Type.SKIN);
++                            resourcelocation = minecraft.getSkinManager().loadSkin(texture, Type.SKIN);
+                         }
+                         else
+                         {
+diff --git a/src/minecraft/net/minecraft/entity/Entity.java b/src/minecraft/net/minecraft/entity/Entity.java
+index 3e21b97..1ac3384 100644
+--- a/src/minecraft/net/minecraft/entity/Entity.java
++++ b/src/minecraft/net/minecraft/entity/Entity.java
+@@ -2577,10 +2577,14 @@ public abstract class Entity implements ICommandSender
+      * Get the formatted ChatComponent that will be used for the sender's username in chat
+      */
+     public IChatComponent getDisplayName()
++    { return this.getDisplayName(true); }
++    public IChatComponent getDisplayName(boolean forChat)
+     {
+         ChatComponentText chatcomponenttext = new ChatComponentText(this.getName());
+-        chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-        chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++        if (forChat) {
++            chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++            chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++        }
+         return chatcomponenttext;
+     }
+ 
+diff --git a/src/minecraft/net/minecraft/entity/item/EntityMinecart.java b/src/minecraft/net/minecraft/entity/item/EntityMinecart.java
+index 8e3c998..b1314b0 100644
+--- a/src/minecraft/net/minecraft/entity/item/EntityMinecart.java
++++ b/src/minecraft/net/minecraft/entity/item/EntityMinecart.java
+@@ -1116,20 +1116,24 @@ public abstract class EntityMinecart extends Entity implements IWorldNameable
+     /**
+      * Get the formatted ChatComponent that will be used for the sender's username in chat
+      */
+-    public IChatComponent getDisplayName()
++    public IChatComponent getDisplayName(boolean forChat)
+     {
+         if (this.hasCustomName())
+         {
+             ChatComponentText chatcomponenttext = new ChatComponentText(this.entityName);
+-            chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-            chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++            if (forChat) {
++                chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++                chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++            }
+             return chatcomponenttext;
+         }
+         else
+         {
+             ChatComponentTranslation chatcomponenttranslation = new ChatComponentTranslation(this.getName(), new Object[0]);
+-            chatcomponenttranslation.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-            chatcomponenttranslation.getChatStyle().setInsertion(this.getUniqueID().toString());
++            if (forChat) {
++                chatcomponenttranslation.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++                chatcomponenttranslation.getChatStyle().setInsertion(this.getUniqueID().toString());
++            }
+             return chatcomponenttranslation;
+         }
+     }
+diff --git a/src/minecraft/net/minecraft/entity/passive/EntityVillager.java b/src/minecraft/net/minecraft/entity/passive/EntityVillager.java
+index 00e9451..69d5968 100644
+--- a/src/minecraft/net/minecraft/entity/passive/EntityVillager.java
++++ b/src/minecraft/net/minecraft/entity/passive/EntityVillager.java
+@@ -608,15 +608,17 @@ public class EntityVillager extends EntityAgeable implements IMerchant, INpc
+     /**
+      * Get the formatted ChatComponent that will be used for the sender's username in chat
+      */
+-    public IChatComponent getDisplayName()
++    public IChatComponent getDisplayName(boolean forChat)
+     {
+         String s = this.getCustomNameTag();
+ 
+         if (s != null && s.length() > 0)
+         {
+             ChatComponentText chatcomponenttext = new ChatComponentText(s);
+-            chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-            chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++            if (forChat) {
++                chatcomponenttext.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++                chatcomponenttext.getChatStyle().setInsertion(this.getUniqueID().toString());
++            }
+             return chatcomponenttext;
+         }
+         else
+@@ -688,13 +690,15 @@ public class EntityVillager extends EntityAgeable implements IMerchant, INpc
+             if (s1 != null)
+             {
+                 ChatComponentTranslation chatcomponenttranslation = new ChatComponentTranslation("entity.Villager." + s1, new Object[0]);
+-                chatcomponenttranslation.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-                chatcomponenttranslation.getChatStyle().setInsertion(this.getUniqueID().toString());
++                if (forChat) {
++                    chatcomponenttranslation.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++                    chatcomponenttranslation.getChatStyle().setInsertion(this.getUniqueID().toString());
++                }
+                 return chatcomponenttranslation;
+             }
+             else
+             {
+-                return super.getDisplayName();
++                return super.getDisplayName(forChat);
+             }
+         }
+     }
+diff --git a/src/minecraft/net/minecraft/entity/player/EntityPlayer.java b/src/minecraft/net/minecraft/entity/player/EntityPlayer.java
+index 43571c6..dd825a6 100644
+--- a/src/minecraft/net/minecraft/entity/player/EntityPlayer.java
++++ b/src/minecraft/net/minecraft/entity/player/EntityPlayer.java
+@@ -2305,12 +2305,14 @@ public abstract class EntityPlayer extends EntityLivingBase
+     /**
+      * Get the formatted ChatComponent that will be used for the sender's username in chat
+      */
+-    public IChatComponent getDisplayName()
++    public IChatComponent getDisplayName(boolean forChat)
+     {
+         IChatComponent ichatcomponent = new ChatComponentText(ScorePlayerTeam.formatPlayerName(this.getTeam(), this.getName()));
+-        ichatcomponent.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/msg " + this.getName() + " "));
+-        ichatcomponent.getChatStyle().setChatHoverEvent(this.getHoverEvent());
+-        ichatcomponent.getChatStyle().setInsertion(this.getName());
++        if (forChat) {
++            ichatcomponent.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/msg " + this.getName() + " "));
++            ichatcomponent.getChatStyle().setChatHoverEvent(this.getHoverEvent());
++            ichatcomponent.getChatStyle().setInsertion(this.getName());
++        }
+         return ichatcomponent;
+     }
+ 
+diff --git a/src/minecraft/net/minecraft/network/PacketBuffer.java b/src/minecraft/net/minecraft/network/PacketBuffer.java
+index 600bd41..5331c43 100644
+--- a/src/minecraft/net/minecraft/network/PacketBuffer.java
++++ b/src/minecraft/net/minecraft/network/PacketBuffer.java
+@@ -166,13 +166,39 @@ public class PacketBuffer extends ByteBuf
+      */
+     public void writeVarIntToBuffer(int input)
+     {
+-        while ((input & -128) != 0)
+-        {
+-            this.writeByte(input & 127 | 128);
+-            input >>>= 7;
++        // https://github.com/astei/krypton/blob/1729bdc4c72c408b3ca9d56a8d1e282f5d25b4a7/src/main/java/me/steinborn/krypton/mixin/shared/network/microopt/PacketByteBufMixin.java#L57
++        // Licensed under LGPLv3
++        // Peel the one and two byte count cases explicitly as they are the most common VarInt sizes
++        // that the proxy will write, to improve inlining.
++        if ((input & (0xFFFFFFFF << 7)) == 0) {
++            this.writeByte(input);
++        } else if ((input & (0xFFFFFFFF << 14)) == 0) {
++            int w = (input & 0x7F | 0x80) << 8 | (input >>> 7);
++            this.writeShort(w);
++        } else {
++            writeVarIntFull(input);
++        }
++    }
++    private void writeVarIntFull(int value) {
++        // See https://steinborn.me/posts/performance/how-fast-can-you-write-a-varint/
++        if ((value & (0xFFFFFFFF << 7)) == 0) {
++            this.writeByte(value);
++        } else if ((value & (0xFFFFFFFF << 14)) == 0) {
++            int w = (value & 0x7F | 0x80) << 8 | (value >>> 7);
++            this.writeShort(w);
++        } else if ((value & (0xFFFFFFFF << 21)) == 0) {
++            int w = (value & 0x7F | 0x80) << 16 | ((value >>> 7) & 0x7F | 0x80) << 8 | (value >>> 14);
++            this.writeMedium(w);
++        } else if ((value & (0xFFFFFFFF << 28)) == 0) {
++            int w = (value & 0x7F | 0x80) << 24 | (((value >>> 7) & 0x7F | 0x80) << 16)
++                    | ((value >>> 14) & 0x7F | 0x80) << 8 | (value >>> 21);
++            this.writeInt(w);
++        } else {
++            int w = (value & 0x7F | 0x80) << 24 | ((value >>> 7) & 0x7F | 0x80) << 16
++                    | ((value >>> 14) & 0x7F | 0x80) << 8 | ((value >>> 21) & 0x7F | 0x80);
++            this.writeInt(w);
++            this.writeByte(value >>> 28);
+         }
+-
+-        this.writeByte(input);
+     }
+ 
+     public void writeVarLong(long value)
+diff --git a/src/minecraft/net/minecraft/world/ChunkCache.java b/src/minecraft/net/minecraft/world/ChunkCache.java
+index 2747a97..dff1a86 100644
+--- a/src/minecraft/net/minecraft/world/ChunkCache.java
++++ b/src/minecraft/net/minecraft/world/ChunkCache.java
+@@ -69,9 +69,11 @@ public class ChunkCache implements IBlockAccess
+     }
+ 
+     public int getCombinedLight(BlockPos pos, int lightValue)
++    { return this.getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public int getCombinedLight(int x, int y, int z, int lightValue)
+     {
+-        int i = this.getLightForExt(EnumSkyBlock.SKY, pos);
+-        int j = this.getLightForExt(EnumSkyBlock.BLOCK, pos);
++        int i = this.getLightForExt(EnumSkyBlock.SKY, x, y, z);
++        int j = this.getLightForExt(EnumSkyBlock.BLOCK, x, y, z);
+ 
+         if (j < lightValue)
+         {
+@@ -110,20 +112,22 @@ public class ChunkCache implements IBlockAccess
+     }
+ 
+     private int getLightForExt(EnumSkyBlock p_175629_1_, BlockPos pos)
++    { return this.getLightForExt(p_175629_1_, pos.getX(), pos.getY(), pos.getZ()); }
++    private int getLightForExt(EnumSkyBlock p_175629_1_, int x, int y, int z)
+     {
+         if (p_175629_1_ == EnumSkyBlock.SKY && this.worldObj.provider.getHasNoSky())
+         {
+             return 0;
+         }
+-        else if (pos.getY() >= 0 && pos.getY() < 256)
++        else if (y >= 0 && y < 256)
+         {
+-            if (this.getBlockState(pos).getBlock().getUseNeighborBrightness())
++            if (this.getBlockState(x, y, z).getBlock().getUseNeighborBrightness())
+             {
+                 int l = 0;
+ 
+                 for (EnumFacing enumfacing : EnumFacing.VALUES)
+                 {
+-                    int k = this.getLightFor(p_175629_1_, pos.offset(enumfacing));
++                    int k = this.getLightFor(p_175629_1_, x + enumfacing.getFrontOffsetX(), y + enumfacing.getFrontOffsetY(), z + enumfacing.getFrontOffsetZ());
+ 
+                     if (k > l)
+                     {
+@@ -140,9 +144,9 @@ public class ChunkCache implements IBlockAccess
+             }
+             else
+             {
+-                int i = (pos.getX() >> 4) - this.chunkX;
+-                int j = (pos.getZ() >> 4) - this.chunkZ;
+-                return this.chunkArray[i][j].getLightFor(p_175629_1_, pos);
++                int i = (x >> 4) - this.chunkX;
++                int j = (z >> 4) - this.chunkZ;
++                return this.chunkArray[i][j].getLightFor(p_175629_1_, x, y, z);
+             }
+         }
+         else
+@@ -161,12 +165,14 @@ public class ChunkCache implements IBlockAccess
+     }
+ 
+     public int getLightFor(EnumSkyBlock p_175628_1_, BlockPos pos)
++    { return this.getLightFor(p_175628_1_, pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLightFor(EnumSkyBlock p_175628_1_, int x, int y, int z)
+     {
+-        if (pos.getY() >= 0 && pos.getY() < 256)
++        if (y >= 0 && y < 256)
+         {
+-            int i = (pos.getX() >> 4) - this.chunkX;
+-            int j = (pos.getZ() >> 4) - this.chunkZ;
+-            return this.chunkArray[i][j].getLightFor(p_175628_1_, pos);
++            int i = (x >> 4) - this.chunkX;
++            int j = (z >> 4) - this.chunkZ;
++            return this.chunkArray[i][j].getLightFor(p_175628_1_, x, y, z);
+         }
+         else
+         {
+diff --git a/src/minecraft/net/minecraft/world/IBlockAccess.java b/src/minecraft/net/minecraft/world/IBlockAccess.java
+index 30af5b8..8217fea 100644
+--- a/src/minecraft/net/minecraft/world/IBlockAccess.java
++++ b/src/minecraft/net/minecraft/world/IBlockAccess.java
+@@ -11,6 +11,7 @@ public interface IBlockAccess
+     TileEntity getTileEntity(BlockPos pos);
+ 
+     int getCombinedLight(BlockPos pos, int lightValue);
++    int getCombinedLight(int x, int y, int z, int lightValue);
+ 
+     IBlockState getBlockState(BlockPos pos);
+     IBlockState getBlockState(int x, int y, int z);
+diff --git a/src/minecraft/net/optifine/DynamicLights.java b/src/minecraft/net/optifine/DynamicLights.java
+index f792dfa..f46252a 100644
+--- a/src/minecraft/net/optifine/DynamicLights.java
++++ b/src/minecraft/net/optifine/DynamicLights.java
+@@ -234,8 +234,10 @@ public class DynamicLights
+     }
+ 
+     public static int getCombinedLight(BlockPos pos, int combinedLight)
++    { return getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), combinedLight); }
++    public static int getCombinedLight(int x, int y, int z, int combinedLight)
+     {
+-        double d0 = getLightLevel(pos);
++        double d0 = getLightLevel(x, y, z);
+         combinedLight = getCombinedLight(d0, combinedLight);
+         return combinedLight;
+     }
+@@ -265,6 +267,8 @@ public class DynamicLights
+     }
+ 
+     public static double getLightLevel(BlockPos pos)
++    { return getLightLevel(pos.getX(), pos.getY(), pos.getZ()); }
++    public static double getLightLevel(int x, int y, int z)
+     {
+         double d0 = 0.0D;
+ 
+@@ -283,9 +287,9 @@ public class DynamicLights
+                     double d1 = dynamiclight.getLastPosX();
+                     double d2 = dynamiclight.getLastPosY();
+                     double d3 = dynamiclight.getLastPosZ();
+-                    double d4 = (double)pos.getX() - d1;
+-                    double d5 = (double)pos.getY() - d2;
+-                    double d6 = (double)pos.getZ() - d3;
++                    double d4 = (double)x - d1;
++                    double d5 = (double)y - d2;
++                    double d6 = (double)z - d3;
+                     double d7 = d4 * d4 + d5 * d5 + d6 * d6;
+ 
+                     if (dynamiclight.isUnderwater() && !Config.isClearWater())
+diff --git a/src/minecraft/net/optifine/override/ChunkCacheOF.java b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+index fdb3f02..eac0163 100644
+--- a/src/minecraft/net/optifine/override/ChunkCacheOF.java
++++ b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+@@ -77,8 +77,10 @@ public class ChunkCacheOF implements IBlockAccess
+     }
+ 
+     public int getCombinedLight(BlockPos pos, int lightValue)
++    { return this.getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public int getCombinedLight(int x, int y, int z, int lightValue)
+     {
+-        int i = this.getPositionIndex(pos);
++        int i = this.getPositionIndex(x, y, z);
+ 
+         if (i >= 0 && i < this.arraySize && this.combinedLights != null)
+         {
+@@ -86,7 +88,7 @@ public class ChunkCacheOF implements IBlockAccess
+ 
+             if (j == -1)
+             {
+-                j = this.getCombinedLightRaw(pos, lightValue);
++                j = this.getCombinedLightRaw(x, y, z, lightValue);
+                 this.combinedLights[i] = j;
+             }
+ 
+@@ -94,17 +96,19 @@ public class ChunkCacheOF implements IBlockAccess
+         }
+         else
+         {
+-            return this.getCombinedLightRaw(pos, lightValue);
++            return this.getCombinedLightRaw(x, y, z, lightValue);
+         }
+     }
+ 
+     private int getCombinedLightRaw(BlockPos pos, int lightValue)
++    { return this.getCombinedLightRaw(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    private int getCombinedLightRaw(int x, int y, int z, int lightValue)
+     {
+-        int i = this.chunkCache.getCombinedLight(pos, lightValue);
++        int i = this.chunkCache.getCombinedLight(x, y, z, lightValue);
+ 
+-        if (this.dynamicLights && !this.getBlockState(pos).getBlock().isOpaqueCube())
++        if (this.dynamicLights && !this.getBlockState(x, y, z).getBlock().isOpaqueCube())
+         {
+-            i = DynamicLights.getCombinedLight(pos, i);
++            i = DynamicLights.getCombinedLight(x, y, z, i);
+         }
+ 
+         return i;
+-- 
+2.35.3
+

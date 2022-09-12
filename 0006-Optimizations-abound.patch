@@ -1,0 +1,1672 @@
+From 9367aa0ef058f91db376cc946582de8417a2c370 Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Mon, 1 Nov 2021 15:29:57 -0400
+Subject: [PATCH] Optimizations abound
+
+- Remove many uses of BlockPos
+- Cache sign rendering
+- Optimize mob Dinnerbone/Grumm check
+- ...And more!
+---
+ src/minecraft/net/minecraft/block/Block.java  |   4 +-
+ .../net/minecraft/block/BlockAir.java         |  10 +-
+ .../client/entity/EntityPlayerSP.java         |  10 +-
+ .../minecraft/client/gui/GuiOverlayDebug.java |   2 +-
+ .../client/gui/GuiUtilRenderComponents.java   |   6 +-
+ .../client/gui/inventory/GuiEditSign.java     |   1 +
+ .../multiplayer/ChunkProviderClient.java      |   2 +-
+ .../client/network/NetHandlerPlayClient.java  |   7 +-
+ .../client/renderer/BlockFluidRenderer.java   |   9 +-
+ .../client/renderer/BlockModelRenderer.java   |   4 +-
+ .../client/renderer/RegionRenderCache.java    |  18 +-
+ .../client/renderer/RenderGlobal.java         |  29 ++-
+ .../client/renderer/ViewFrustum.java          |   8 +-
+ .../client/renderer/chunk/RenderChunk.java    |   2 +-
+ .../client/renderer/entity/Render.java        |   5 +-
+ .../client/renderer/entity/RenderPlayer.java  |   6 +
+ .../renderer/entity/RendererLivingEntity.java |  20 +-
+ .../tileentity/TileEntitySignRenderer.java    |  12 +-
+ .../minecraft/crash/CrashReportCategory.java  |   6 +-
+ .../net/minecraft/entity/Entity.java          |  14 +-
+ .../net/minecraft/nbt/NBTTagString.java       |   6 +-
+ .../minecraft/tileentity/TileEntitySign.java  |   3 +
+ .../net/minecraft/util/BlockPos.java          |  35 ++-
+ .../net/minecraft/world/ChunkCache.java       |  12 +-
+ .../net/minecraft/world/IBlockAccess.java     |   1 +
+ .../net/minecraft/world/IWorldAccess.java     |   1 +
+ src/minecraft/net/minecraft/world/World.java  | 229 +++++++++++-------
+ .../net/minecraft/world/WorldManager.java     |   2 +
+ .../net/minecraft/world/chunk/Chunk.java      |  93 ++++---
+ .../chunk/storage/ExtendedBlockStorage.java   |  18 +-
+ .../net/optifine/override/ChunkCacheOF.java   |  16 +-
+ .../net/optifine/reflect/Reflector.java       |   4 +-
+ 32 files changed, 369 insertions(+), 226 deletions(-)
+
+diff --git a/src/minecraft/net/minecraft/block/Block.java b/src/minecraft/net/minecraft/block/Block.java
+index 48563c5..ded548f 100644
+--- a/src/minecraft/net/minecraft/block/Block.java
++++ b/src/minecraft/net/minecraft/block/Block.java
+@@ -464,8 +464,10 @@ public class Block
+     }
+ 
+     public boolean shouldSideBeRendered(IBlockAccess worldIn, BlockPos pos, EnumFacing side)
++    { return this.shouldSideBeRendered(worldIn, pos.getX(), pos.getY(), pos.getZ(), side); }
++    public boolean shouldSideBeRendered(IBlockAccess worldIn, int x, int y, int z, EnumFacing side)
+     {
+-        return side == EnumFacing.DOWN && this.minY > 0.0D ? true : (side == EnumFacing.UP && this.maxY < 1.0D ? true : (side == EnumFacing.NORTH && this.minZ > 0.0D ? true : (side == EnumFacing.SOUTH && this.maxZ < 1.0D ? true : (side == EnumFacing.WEST && this.minX > 0.0D ? true : (side == EnumFacing.EAST && this.maxX < 1.0D ? true : !worldIn.getBlockState(pos).getBlock().isOpaqueCube())))));
++        return side == EnumFacing.DOWN && this.minY > 0.0D ? true : (side == EnumFacing.UP && this.maxY < 1.0D ? true : (side == EnumFacing.NORTH && this.minZ > 0.0D ? true : (side == EnumFacing.SOUTH && this.maxZ < 1.0D ? true : (side == EnumFacing.WEST && this.minX > 0.0D ? true : (side == EnumFacing.EAST && this.maxX < 1.0D ? true : !worldIn.getBlockState(x, y, z).getBlock().isOpaqueCube())))));
+     }
+ 
+     /**
+diff --git a/src/minecraft/net/minecraft/block/BlockAir.java b/src/minecraft/net/minecraft/block/BlockAir.java
+index 94e6ad7..a8e5d8e 100644
+--- a/src/minecraft/net/minecraft/block/BlockAir.java
++++ b/src/minecraft/net/minecraft/block/BlockAir.java
+@@ -10,7 +10,7 @@ import net.minecraft.world.World;
+ 
+ public class BlockAir extends Block
+ {
+-    private static Map mapOriginalOpacity = new IdentityHashMap();
++    //private static Map mapOriginalOpacity = new IdentityHashMap();
+ 
+     protected BlockAir()
+     {
+@@ -60,20 +60,20 @@ public class BlockAir extends Block
+ 
+     public static void setLightOpacity(Block p_setLightOpacity_0_, int p_setLightOpacity_1_)
+     {
+-        if (!mapOriginalOpacity.containsKey(p_setLightOpacity_0_))
++        /*if (!mapOriginalOpacity.containsKey(p_setLightOpacity_0_))
+         {
+             mapOriginalOpacity.put(p_setLightOpacity_0_, Integer.valueOf(p_setLightOpacity_0_.lightOpacity));
+-        }
++        }*/
+ 
+         p_setLightOpacity_0_.lightOpacity = p_setLightOpacity_1_;
+     }
+ 
+-    public static void restoreLightOpacity(Block p_restoreLightOpacity_0_)
++    /*public static void restoreLightOpacity(Block p_restoreLightOpacity_0_)
+     {
+         if (mapOriginalOpacity.containsKey(p_restoreLightOpacity_0_))
+         {
+             int i = ((Integer)mapOriginalOpacity.get(p_restoreLightOpacity_0_)).intValue();
+             setLightOpacity(p_restoreLightOpacity_0_, i);
+         }
+-    }
++    }*/
+ }
+diff --git a/src/minecraft/net/minecraft/client/entity/EntityPlayerSP.java b/src/minecraft/net/minecraft/client/entity/EntityPlayerSP.java
+index ef53142..90e7875 100644
+--- a/src/minecraft/net/minecraft/client/entity/EntityPlayerSP.java
++++ b/src/minecraft/net/minecraft/client/entity/EntityPlayerSP.java
+@@ -42,13 +42,7 @@ import net.minecraft.potion.Potion;
+ import net.minecraft.stats.StatBase;
+ import net.minecraft.stats.StatFileWriter;
+ import net.minecraft.tileentity.TileEntitySign;
+-import net.minecraft.util.BlockPos;
+-import net.minecraft.util.DamageSource;
+-import net.minecraft.util.EnumFacing;
+-import net.minecraft.util.EnumParticleTypes;
+-import net.minecraft.util.IChatComponent;
+-import net.minecraft.util.MovementInput;
+-import net.minecraft.util.ResourceLocation;
++import net.minecraft.util.*;
+ import net.minecraft.world.IInteractionObject;
+ import net.minecraft.world.World;
+ 
+@@ -167,7 +161,7 @@ public class EntityPlayerSP extends AbstractClientPlayer
+      */
+     public void onUpdate()
+     {
+-        if (this.worldObj.isBlockLoaded(new BlockPos(this.posX, 0.0D, this.posZ)))
++        if (this.worldObj.isBlockLoaded(MathHelper.floor_double(this.posX), 0, MathHelper.floor_double(this.posZ)));
+         {
+             super.onUpdate();
+ 
+diff --git a/src/minecraft/net/minecraft/client/gui/GuiOverlayDebug.java b/src/minecraft/net/minecraft/client/gui/GuiOverlayDebug.java
+index 2c62a76..caeca10 100644
+--- a/src/minecraft/net/minecraft/client/gui/GuiOverlayDebug.java
++++ b/src/minecraft/net/minecraft/client/gui/GuiOverlayDebug.java
+@@ -221,7 +221,7 @@ public class GuiOverlayDebug extends Gui
+             {
+                 Chunk chunk = this.mc.theWorld.getChunkFromBlockCoords(blockpos);
+                 list.add("Biome: " + chunk.getBiome(blockpos, this.mc.theWorld.getWorldChunkManager()).biomeName);
+-                list.add("Light: " + chunk.getLightSubtracted(blockpos, 0) + " (" + chunk.getLightFor(EnumSkyBlock.SKY, blockpos) + " sky, " + chunk.getLightFor(EnumSkyBlock.BLOCK, blockpos) + " block)");
++                list.add("Light: " + chunk.getLightSubtracted(blockpos.getX(), blockpos.getY(), blockpos.getZ(), 0) + " (" + chunk.getLightFor(EnumSkyBlock.SKY, blockpos) + " sky, " + chunk.getLightFor(EnumSkyBlock.BLOCK, blockpos) + " block)");
+                 DifficultyInstance difficultyinstance = this.mc.theWorld.getDifficultyForLocation(blockpos);
+ 
+                 if (this.mc.isIntegratedServerRunning() && this.mc.getIntegratedServer() != null)
+diff --git a/src/minecraft/net/minecraft/client/gui/GuiUtilRenderComponents.java b/src/minecraft/net/minecraft/client/gui/GuiUtilRenderComponents.java
+index 4a38cda..3143a3b 100644
+--- a/src/minecraft/net/minecraft/client/gui/GuiUtilRenderComponents.java
++++ b/src/minecraft/net/minecraft/client/gui/GuiUtilRenderComponents.java
+@@ -27,9 +27,11 @@ public class GuiUtilRenderComponents
+             String s = ichatcomponent1.getUnformattedTextForChat();
+             boolean flag = false;
+ 
+-            if (s.contains("\n"))
++            int k = s.indexOf(10);
++            //if (s.contains("\n")) \n == 10
++            if (k > -1)
+             {
+-                int k = s.indexOf(10);
++                //int k = s.indexOf(10); Moved up
+                 String s1 = s.substring(k + 1);
+                 s = s.substring(0, k + 1);
+                 ChatComponentText chatcomponenttext = new ChatComponentText(s1);
+diff --git a/src/minecraft/net/minecraft/client/gui/inventory/GuiEditSign.java b/src/minecraft/net/minecraft/client/gui/inventory/GuiEditSign.java
+index 6860106..71457ad 100644
+--- a/src/minecraft/net/minecraft/client/gui/inventory/GuiEditSign.java
++++ b/src/minecraft/net/minecraft/client/gui/inventory/GuiEditSign.java
+@@ -114,6 +114,7 @@ public class GuiEditSign extends GuiScreen
+         }
+ 
+         this.tileSign.signText[this.editLine] = new ChatComponentText(s);
++        this.tileSign.cachedRenderLines[this.editLine] = null;
+ 
+         if (keyCode == 1)
+         {
+diff --git a/src/minecraft/net/minecraft/client/multiplayer/ChunkProviderClient.java b/src/minecraft/net/minecraft/client/multiplayer/ChunkProviderClient.java
+index 88c2d31..3db0990 100644
+--- a/src/minecraft/net/minecraft/client/multiplayer/ChunkProviderClient.java
++++ b/src/minecraft/net/minecraft/client/multiplayer/ChunkProviderClient.java
+@@ -24,7 +24,7 @@ public class ChunkProviderClient implements IChunkProvider
+      * coordinates.
+      */
+     private Chunk blankChunk;
+-    private LongHashMap<Chunk> chunkMapping = new LongHashMap();
++    public LongHashMap<Chunk> chunkMapping = new LongHashMap(); // Private -> Public for Optifine
+     private List<Chunk> chunkListing = Lists.<Chunk>newArrayList();
+ 
+     /** Reference to the World object. */
+diff --git a/src/minecraft/net/minecraft/client/network/NetHandlerPlayClient.java b/src/minecraft/net/minecraft/client/network/NetHandlerPlayClient.java
+index 86725b4..a7ee86f 100644
+--- a/src/minecraft/net/minecraft/client/network/NetHandlerPlayClient.java
++++ b/src/minecraft/net/minecraft/client/network/NetHandlerPlayClient.java
+@@ -7,11 +7,7 @@ import com.mojang.authlib.GameProfile;
+ import io.netty.buffer.Unpooled;
+ import java.io.File;
+ import java.io.IOException;
+-import java.util.Collection;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.Random;
+-import java.util.UUID;
++import java.util.*;
+ import java.util.Map.Entry;
+ import net.minecraft.block.Block;
+ import net.minecraft.client.ClientBrandRetriever;
+@@ -1247,6 +1243,7 @@ public class NetHandlerPlayClient implements INetHandlerPlayClient
+                 if (tileentitysign.getIsEditable())
+                 {
+                     System.arraycopy(packetIn.getLines(), 0, tileentitysign.signText, 0, 4);
++                    Arrays.fill(tileentitysign.cachedRenderLines, null);
+                     tileentitysign.markDirty();
+                 }
+ 
+diff --git a/src/minecraft/net/minecraft/client/renderer/BlockFluidRenderer.java b/src/minecraft/net/minecraft/client/renderer/BlockFluidRenderer.java
+index 86746ee..c10b871 100644
+--- a/src/minecraft/net/minecraft/client/renderer/BlockFluidRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/BlockFluidRenderer.java
+@@ -286,20 +286,23 @@ public class BlockFluidRenderer
+     }
+ 
+     private float getFluidHeight(IBlockAccess blockAccess, BlockPos blockPosIn, Material blockMaterial)
++    { return this.getFluidHeight(blockAccess, blockPosIn.getX(), blockPosIn.getY(), blockPosIn.getZ(), blockMaterial); }
++    private float getFluidHeight(IBlockAccess blockAccess, int xIn, int yIn, int zIn, Material blockMaterial)
+     {
+         int i = 0;
+         float f = 0.0F;
+ 
+         for (int j = 0; j < 4; ++j)
+         {
+-            BlockPos blockpos = blockPosIn.add(-(j & 1), 0, -(j >> 1 & 1));
++            //BlockPos blockpos = blockPosIn.add(-(j & 1), 0, -(j >> 1 & 1));
++            int x = xIn - (j & 1); int z = zIn - (j >> 1 & 1);
+ 
+-            if (blockAccess.getBlockState(blockpos.up()).getBlock().getMaterial() == blockMaterial)
++            if (blockAccess.getBlockState(x, yIn + 1, z).getBlock().getMaterial() == blockMaterial)
+             {
+                 return 1.0F;
+             }
+ 
+-            IBlockState iblockstate = blockAccess.getBlockState(blockpos);
++            IBlockState iblockstate = blockAccess.getBlockState(x, yIn, z);
+             Material material = iblockstate.getBlock().getMaterial();
+ 
+             if (material != blockMaterial)
+diff --git a/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java b/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
+index dc5ee48..41a4f21 100644
+--- a/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/BlockModelRenderer.java
+@@ -105,9 +105,9 @@ public class BlockModelRenderer
+ 
+             if (!list.isEmpty())
+             {
+-                BlockPos blockpos = p_renderModelSmooth_4_.offset(enumfacing);
++                //BlockPos blockpos = p_renderModelSmooth_4_.offset(enumfacing);
+ 
+-                if (!p_renderModelSmooth_6_ || block.shouldSideBeRendered(p_renderModelSmooth_1_, blockpos, enumfacing))
++                if (!p_renderModelSmooth_6_ || block.shouldSideBeRendered(p_renderModelSmooth_1_, p_renderModelSmooth_4_.getX() + enumfacing.getFrontOffsetX(), p_renderModelSmooth_4_.getY() + enumfacing.getFrontOffsetY(), p_renderModelSmooth_4_.getZ() + enumfacing.getFrontOffsetZ(), enumfacing))
+                 {
+                     list = BlockModelCustomizer.getRenderQuads(list, p_renderModelSmooth_1_, p_renderModelSmooth_3_, p_renderModelSmooth_4_, enumfacing, enumworldblocklayer, 0L, renderenv);
+                     this.renderQuadsSmooth(p_renderModelSmooth_1_, p_renderModelSmooth_3_, p_renderModelSmooth_4_, p_renderModelSmooth_5_, list, renderenv);
+diff --git a/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java b/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
+index 14e3abd..2f686ba 100644
+--- a/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
++++ b/src/minecraft/net/minecraft/client/renderer/RegionRenderCache.java
+@@ -62,29 +62,33 @@ public class RegionRenderCache extends ChunkCache
+     }
+ 
+     public IBlockState getBlockState(BlockPos pos)
++    { return this.getBlockState(pos.getX(), pos.getY(), pos.getZ()); }
++    public IBlockState getBlockState(int x, int y, int z)
+     {
+-        int i = this.getPositionIndex(pos);
++        int i = this.getPositionIndex(x, y, z);
+         IBlockState iblockstate = this.blockStates[i];
+ 
+         if (iblockstate == null)
+         {
+-            iblockstate = this.getBlockStateRaw(pos);
++            iblockstate = this.getBlockStateRaw(x, y, z);
+             this.blockStates[i] = iblockstate;
+         }
+ 
+         return iblockstate;
+     }
+ 
+-    private IBlockState getBlockStateRaw(BlockPos pos)
++    private IBlockState getBlockStateRaw(int x, int y, int z)
+     {
+-        return super.getBlockState(pos);
++        return super.getBlockState(x, y, z);
+     }
+ 
+     private int getPositionIndex(BlockPos p_175630_1_)
++    { return this.getPositionIndex(p_175630_1_.getX(), p_175630_1_.getY(), p_175630_1_.getZ()); }
++    private int getPositionIndex(int x, int y, int z)
+     {
+-        int i = p_175630_1_.getX() - this.position.getX();
+-        int j = p_175630_1_.getY() - this.position.getY();
+-        int k = p_175630_1_.getZ() - this.position.getZ();
++        int i = x - this.position.getX();
++        int j = y - this.position.getY();
++        int k = z - this.position.getZ();
+         return i * 400 + k * 20 + j;
+     }
+ 
+diff --git a/src/minecraft/net/minecraft/client/renderer/RenderGlobal.java b/src/minecraft/net/minecraft/client/renderer/RenderGlobal.java
+index cf14e46..6640181 100644
+--- a/src/minecraft/net/minecraft/client/renderer/RenderGlobal.java
++++ b/src/minecraft/net/minecraft/client/renderer/RenderGlobal.java
+@@ -31,6 +31,7 @@ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.audio.ISound;
+ import net.minecraft.client.audio.PositionedSoundRecord;
+ import net.minecraft.client.gui.GuiScreen;
++import net.minecraft.client.multiplayer.ChunkProviderClient;
+ import net.minecraft.client.multiplayer.WorldClient;
+ import net.minecraft.client.particle.EntityFX;
+ import net.minecraft.client.renderer.chunk.ChunkRenderDispatcher;
+@@ -1068,9 +1069,10 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+         }
+ 
+         this.mc.mcProfiler.endStartSection("culling");
+-        BlockPos blockpos = new BlockPos(d3, d4 + (double)viewEntity.getEyeHeight(), d5);
+-        RenderChunk renderchunk = this.viewFrustum.getRenderChunk(blockpos);
+-        new BlockPos(MathHelper.floor_double(d3 / 16.0D) * 16, MathHelper.floor_double(d4 / 16.0D) * 16, MathHelper.floor_double(d5 / 16.0D) * 16);
++        //BlockPos blockpos = new BlockPos(d3, d4 + (double)viewEntity.getEyeHeight(), d5);
++        int viewEntityX = MathHelper.floor_double(d3); int viewEntityY = MathHelper.floor_double(d4 + (double)viewEntity.getEyeHeight()); int viewEntityZ = MathHelper.floor_double(d5);
++        RenderChunk renderchunk = this.viewFrustum.getRenderChunk(viewEntityX, viewEntityY, viewEntityZ);
++        //new BlockPos(MathHelper.floor_double(d3 / 16.0D) * 16, MathHelper.floor_double(d4 / 16.0D) * 16, MathHelper.floor_double(d5 / 16.0D) * 16); accident?
+         this.displayListEntitiesDirty = this.displayListEntitiesDirty || !this.chunksToUpdate.isEmpty() || viewEntity.posX != this.lastViewEntityX || viewEntity.posY != this.lastViewEntityY || viewEntity.posZ != this.lastViewEntityZ || (double)viewEntity.rotationPitch != this.lastViewEntityPitch || (double)viewEntity.rotationYaw != this.lastViewEntityYaw;
+         this.lastViewEntityX = viewEntity.posX;
+         this.lastViewEntityY = viewEntity.posY;
+@@ -1184,7 +1186,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+                 }
+                 else
+                 {
+-                    if (playerSpectator && this.theWorld.getBlockState(blockpos).getBlock().isOpaqueCube())
++                    if (playerSpectator && this.theWorld.getBlockState(viewEntityX, viewEntityY, viewEntityZ).getBlock().isOpaqueCube())
+                     {
+                         flag1 = false;
+                     }
+@@ -1195,7 +1197,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+             }
+             else
+             {
+-                int j1 = blockpos.getY() > 0 ? Math.min(j, 248) : 8;
++                int j1 = viewEntityY > 0 ? Math.min(j, 248) : 8;
+ 
+                 if (renderchunk1 != null)
+                 {
+@@ -1248,7 +1250,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+                 {
+                     if (!flag1 || enumfacing1 == null || compiledchunk.isVisible(enumfacing1.getOpposite(), enumfacing))
+                     {
+-                        RenderChunk renderchunk4 = this.getRenderChunkOffset(blockpos, renderchunk6, enumfacing, flag3, j);
++                        RenderChunk renderchunk4 = this.getRenderChunkOffset(viewEntityX, viewEntityY, viewEntityZ, renderchunk6, enumfacing, flag3, j);
+ 
+                         if (renderchunk4 != null && renderchunk4.setFrameIndex(frameCount) && renderchunk4.isBoundingBoxInFrustum((ICamera)camera, frameCount))
+                         {
+@@ -1294,7 +1296,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+                 {
+                     this.displayListEntitiesDirty = true;
+                     BlockPos blockpos1 = renderchunk5.getPosition();
+-                    boolean flag4 = blockpos.distanceSq((double)(blockpos1.getX() + 8), (double)(blockpos1.getY() + 8), (double)(blockpos1.getZ() + 8)) < 768.0D;
++                    boolean flag4 = BlockPos.distanceSq(viewEntityX, viewEntityY, viewEntityZ, (double)(blockpos1.getX() + 8), (double)(blockpos1.getY() + 8), (double)(blockpos1.getZ() + 8)) < 768.0D;
+ 
+                     if (!flag4)
+                     {
+@@ -1343,6 +1345,8 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+     }
+ 
+     private RenderChunk getRenderChunkOffset(BlockPos p_getRenderChunkOffset_1_, RenderChunk p_getRenderChunkOffset_2_, EnumFacing p_getRenderChunkOffset_3_, boolean p_getRenderChunkOffset_4_, int p_getRenderChunkOffset_5_)
++    { return this.getRenderChunkOffset(p_getRenderChunkOffset_1_.getX(), p_getRenderChunkOffset_1_.getY(), p_getRenderChunkOffset_1_.getZ(), p_getRenderChunkOffset_2_, p_getRenderChunkOffset_3_, p_getRenderChunkOffset_4_, p_getRenderChunkOffset_5_); }
++    private RenderChunk getRenderChunkOffset(int x, int y, int z, RenderChunk p_getRenderChunkOffset_2_, EnumFacing p_getRenderChunkOffset_3_, boolean p_getRenderChunkOffset_4_, int p_getRenderChunkOffset_5_)
+     {
+         RenderChunk renderchunk = p_getRenderChunkOffset_2_.getRenderChunkNeighbour(p_getRenderChunkOffset_3_);
+ 
+@@ -1359,8 +1363,8 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+             if (p_getRenderChunkOffset_4_)
+             {
+                 BlockPos blockpos = renderchunk.getPosition();
+-                int i = p_getRenderChunkOffset_1_.getX() - blockpos.getX();
+-                int j = p_getRenderChunkOffset_1_.getZ() - blockpos.getZ();
++                int i = x - blockpos.getX();
++                int j = z - blockpos.getZ();
+                 int k = i * i + j * j;
+ 
+                 if (k > this.renderDistanceSq)
+@@ -2731,9 +2735,8 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+ 
+     public void notifyLightSet(BlockPos pos)
+     {
+-        int i = pos.getX();
+-        int j = pos.getY();
+-        int k = pos.getZ();
++        this.notifyLightSet(pos.getX(), pos.getY(), pos.getZ()); }
++    public void notifyLightSet(int i, int j, int k) {
+         this.markBlocksForUpdate(i - 1, j - 1, k - 1, i + 1, j + 1, k + 1);
+     }
+ 
+@@ -3317,7 +3320,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
+                 if (ichunkprovider != this.worldChunkProvider)
+                 {
+                     this.worldChunkProvider = ichunkprovider;
+-                    this.worldChunkProviderMap = (LongHashMap)Reflector.getFieldValue(ichunkprovider, Reflector.ChunkProviderClient_chunkMapping);
++                    this.worldChunkProviderMap = ((ChunkProviderClient) ichunkprovider).chunkMapping;
+                 }
+ 
+                 return this.worldChunkProviderMap == null ? 0 : this.worldChunkProviderMap.getNumHashElements();
+diff --git a/src/minecraft/net/minecraft/client/renderer/ViewFrustum.java b/src/minecraft/net/minecraft/client/renderer/ViewFrustum.java
+index 9abb831..2dded93 100644
+--- a/src/minecraft/net/minecraft/client/renderer/ViewFrustum.java
++++ b/src/minecraft/net/minecraft/client/renderer/ViewFrustum.java
+@@ -179,10 +179,12 @@ public class ViewFrustum
+     }
+ 
+     public RenderChunk getRenderChunk(BlockPos pos)
++    { return this.getRenderChunk(pos.getX(), pos.getY(), pos.getZ()); }
++    public RenderChunk getRenderChunk(int x, int y, int z)
+     {
+-        int i = pos.getX() >> 4;
+-        int j = pos.getY() >> 4;
+-        int k = pos.getZ() >> 4;
++        int i = x >> 4;
++        int j = y >> 4;
++        int k = z >> 4;
+ 
+         if (j >= 0 && j < this.countChunksY)
+         {
+diff --git a/src/minecraft/net/minecraft/client/renderer/chunk/RenderChunk.java b/src/minecraft/net/minecraft/client/renderer/chunk/RenderChunk.java
+index 4354c9c..8cb1c17 100644
+--- a/src/minecraft/net/minecraft/client/renderer/chunk/RenderChunk.java
++++ b/src/minecraft/net/minecraft/client/renderer/chunk/RenderChunk.java
+@@ -93,7 +93,7 @@ public class RenderChunk
+ 
+         if (OpenGlHelper.useVbo())
+         {
+-            for (int i = 0; i < EnumWorldBlockLayer.values().length; ++i)
++            for (int i = 0; i < ENUM_WORLD_BLOCK_LAYERS.length; ++i)
+             {
+                 this.vertexBuffers[i] = new VertexBuffer(DefaultVertexFormats.BLOCK);
+             }
+diff --git a/src/minecraft/net/minecraft/client/renderer/entity/Render.java b/src/minecraft/net/minecraft/client/renderer/entity/Render.java
+index b13bedb..d2b9087 100644
+--- a/src/minecraft/net/minecraft/client/renderer/entity/Render.java
++++ b/src/minecraft/net/minecraft/client/renderer/entity/Render.java
+@@ -229,9 +229,10 @@ public abstract class Render<T extends Entity> implements IEntityRenderer
+             WorldRenderer worldrenderer = tessellator.getWorldRenderer();
+             worldrenderer.begin(7, DefaultVertexFormats.POSITION_TEX_COLOR);
+ 
+-            for (BlockPos blockpos : BlockPos.getAllInBoxMutable(new BlockPos(i, k, i1), new BlockPos(j, l, j1)))
++            //for (BlockPos blockpos : BlockPos.getAllInBoxMutable(new BlockPos(i, k, i1), new BlockPos(j, l, j1)))
++            for (BlockPos blockpos : BlockPos.getAllInBoxMutable(i, k, i1, j, l, j1))
+             {
+-                Block block = world.getBlockState(blockpos.down()).getBlock();
++                Block block = world.getBlockState(blockpos.getX(), blockpos.getY() - 1, blockpos.getZ()).getBlock();
+ 
+                 if (block.getRenderType() != -1 && world.getLightFromNeighbors(blockpos) > 3)
+                 {
+diff --git a/src/minecraft/net/minecraft/client/renderer/entity/RenderPlayer.java b/src/minecraft/net/minecraft/client/renderer/entity/RenderPlayer.java
+index 0e3a901..9809a65 100644
+--- a/src/minecraft/net/minecraft/client/renderer/entity/RenderPlayer.java
++++ b/src/minecraft/net/minecraft/client/renderer/entity/RenderPlayer.java
+@@ -209,4 +209,10 @@ public class RenderPlayer extends RendererLivingEntity<AbstractClientPlayer>
+             super.rotateCorpse(bat, p_77043_2_, p_77043_3_, partialTicks);
+         }
+     }
++
++    @Override
++    protected final boolean isDinnerboneOrGrumm(AbstractClientPlayer entity) {
++        String s = net.minecraft.util.EnumChatFormatting.getTextWithoutFormattingCodes(entity.getName());
++        return s != null && (s.equals("Dinnerbone") || s.equals("Grumm")) && entity.isWearing(EnumPlayerModelParts.CAPE);
++    }
+ }
+diff --git a/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java b/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
+index a71e7f5..fea0a33 100644
+--- a/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
++++ b/src/minecraft/net/minecraft/client/renderer/entity/RendererLivingEntity.java
+@@ -537,9 +537,10 @@ public abstract class RendererLivingEntity<T extends EntityLivingBase> extends R
+         }
+         else
+         {
+-            String s = EnumChatFormatting.getTextWithoutFormattingCodes(bat.getName());
++            //String s = EnumChatFormatting.getTextWithoutFormattingCodes(bat.getName());
+ 
+-            if (s != null && (s.equals("Dinnerbone") || s.equals("Grumm")) && (!(bat instanceof EntityPlayer) || ((EntityPlayer)bat).isWearing(EnumPlayerModelParts.CAPE)))
++            //if (s != null && (s.equals("Dinnerbone") || s.equals("Grumm")) && (!(bat instanceof EntityPlayer) || ((EntityPlayer)bat).isWearing(EnumPlayerModelParts.CAPE)))
++            if (this.isDinnerboneOrGrumm(bat))
+             {
+                 GlStateManager.translate(0.0F, bat.height + 0.1F, 0.0F);
+                 GlStateManager.rotate(180.0F, 0.0F, 0.0F, 1.0F);
+@@ -547,6 +548,21 @@ public abstract class RendererLivingEntity<T extends EntityLivingBase> extends R
+         }
+     }
+ 
++    private static final boolean OPTIMIZED_DINNERBONE_GRUMM_CHECK = true;
++    /** Optimize this check to not check the translated name */
++    protected boolean isDinnerboneOrGrumm(T entity) {
++        if (OPTIMIZED_DINNERBONE_GRUMM_CHECK) {
++            if (!entity.hasCustomName()) {
++                return false;
++            }
++            String customName = EnumChatFormatting.getTextWithoutFormattingCodes(entity.getCustomNameTag());
++            return customName.equals("Dinnerbone") || customName.equals("Grumm");
++        } else {
++            String s = EnumChatFormatting.getTextWithoutFormattingCodes(entity.getName()); // Inefficient because it will check the local name such as Enderman - could be intentional so should be a config option
++            return s != null && (s.equals("Dinnerbone") || s.equals("Grumm"));
++        }
++    }
++
+     /**
+      * Returns where in the swing animation the living entity is (from 0 to 1).  Args : entity, partialTickTime
+      */
+diff --git a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySignRenderer.java b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySignRenderer.java
+index 98e769b..c7f77b0 100644
+--- a/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySignRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/tileentity/TileEntitySignRenderer.java
+@@ -106,9 +106,15 @@ public class TileEntitySignRenderer extends TileEntitySpecialRenderer<TileEntity
+                 {
+                     if (te.signText[j] != null)
+                     {
+-                        IChatComponent ichatcomponent = te.signText[j];
+-                        List<IChatComponent> list = GuiUtilRenderComponents.func_178908_a(ichatcomponent, 90, fontrenderer, false, true);
+-                        String s = list != null && list.size() > 0 ? ((IChatComponent)list.get(0)).getFormattedText() : "";
++                        String s;
++                        if (te.cachedRenderLines[j] != null) {
++                            s = te.cachedRenderLines[j];
++                        } else {
++                            IChatComponent ichatcomponent = te.signText[j];
++                            List<IChatComponent> list = GuiUtilRenderComponents.func_178908_a(ichatcomponent, 90, fontrenderer, false, true);
++                            s = list != null && list.size() > 0 ? ((IChatComponent)list.get(0)).getFormattedText() : "";
++                            te.cachedRenderLines[j] = s;
++                        }
+ 
+                         if (j == te.lineBeingEdited)
+                         {
+diff --git a/src/minecraft/net/minecraft/crash/CrashReportCategory.java b/src/minecraft/net/minecraft/crash/CrashReportCategory.java
+index 38bb981..06cd43c 100644
+--- a/src/minecraft/net/minecraft/crash/CrashReportCategory.java
++++ b/src/minecraft/net/minecraft/crash/CrashReportCategory.java
+@@ -25,11 +25,9 @@ public class CrashReportCategory
+         return String.format("%.2f,%.2f,%.2f - %s", new Object[] {Double.valueOf(x), Double.valueOf(y), Double.valueOf(z), getCoordinateInfo(new BlockPos(x, y, z))});
+     }
+ 
+-    public static String getCoordinateInfo(BlockPos pos)
++    public static String getCoordinateInfo(BlockPos pos) { return getCoordinateInfo(pos.getX(), pos.getY(), pos.getZ()); }
++    public static String getCoordinateInfo(int i, int j, int k)
+     {
+-        int i = pos.getX();
+-        int j = pos.getY();
+-        int k = pos.getZ();
+         StringBuilder stringbuilder = new StringBuilder();
+ 
+         try
+diff --git a/src/minecraft/net/minecraft/entity/Entity.java b/src/minecraft/net/minecraft/entity/Entity.java
+index 5626546..3e21b97 100644
+--- a/src/minecraft/net/minecraft/entity/Entity.java
++++ b/src/minecraft/net/minecraft/entity/Entity.java
+@@ -1165,8 +1165,8 @@ public abstract class Entity implements ICommandSender
+         int i = MathHelper.floor_double(this.posX);
+         int j = MathHelper.floor_double(this.posY - 0.20000000298023224D);
+         int k = MathHelper.floor_double(this.posZ);
+-        BlockPos blockpos = new BlockPos(i, j, k);
+-        IBlockState iblockstate = this.worldObj.getBlockState(blockpos);
++        //BlockPos blockpos = new BlockPos(i, j, k);
++        IBlockState iblockstate = this.worldObj.getBlockState(i, j, k);
+         Block block = iblockstate.getBlock();
+ 
+         if (block.getRenderType() != -1)
+@@ -1236,8 +1236,9 @@ public abstract class Entity implements ICommandSender
+ 
+     public int getBrightnessForRender(float partialTicks)
+     {
+-        BlockPos blockpos = new BlockPos(this.posX, this.posY + (double)this.getEyeHeight(), this.posZ);
+-        return this.worldObj.isBlockLoaded(blockpos) ? this.worldObj.getCombinedLight(blockpos, 0) : 0;
++        //BlockPos blockpos = new BlockPos(this.posX, this.posY + (double)this.getEyeHeight(), this.posZ);
++        int x = MathHelper.floor_double(this.posX); int y = MathHelper.floor_double(this.posY + (double)this.getEyeHeight()); int z = MathHelper.floor_double(this.posZ);
++        return this.worldObj.isBlockLoaded(x, y, z) ? this.worldObj.getCombinedLight(x, y, z, 0) : 0;
+     }
+ 
+     /**
+@@ -1245,8 +1246,9 @@ public abstract class Entity implements ICommandSender
+      */
+     public float getBrightness(float partialTicks)
+     {
+-        BlockPos blockpos = new BlockPos(this.posX, this.posY + (double)this.getEyeHeight(), this.posZ);
+-        return this.worldObj.isBlockLoaded(blockpos) ? this.worldObj.getLightBrightness(blockpos) : 0.0F;
++        //BlockPos blockpos = new BlockPos(this.posX, this.posY + (double)this.getEyeHeight(), this.posZ);
++        int x = MathHelper.floor_double(this.posX); int y = MathHelper.floor_double(this.posY + (double)this.getEyeHeight()); int z = MathHelper.floor_double(this.posZ);
++        return this.worldObj.isBlockLoaded(x, y, z) ? this.worldObj.getLightBrightness(x, y, z) : 0.0F;
+     }
+ 
+     /**
+diff --git a/src/minecraft/net/minecraft/nbt/NBTTagString.java b/src/minecraft/net/minecraft/nbt/NBTTagString.java
+index c783014..ec56ba1 100644
+--- a/src/minecraft/net/minecraft/nbt/NBTTagString.java
++++ b/src/minecraft/net/minecraft/nbt/NBTTagString.java
+@@ -3,6 +3,8 @@ package net.minecraft.nbt;
+ import java.io.DataInput;
+ import java.io.DataOutput;
+ import java.io.IOException;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
+ 
+ public class NBTTagString extends NBTBase
+ {
+@@ -47,9 +49,11 @@ public class NBTTagString extends NBTBase
+         return (byte)8;
+     }
+ 
++    private static final Pattern QUOTES = Pattern.compile("\"", Pattern.LITERAL);
++    private static final String QUOTE_REPLACEMENT = Matcher.quoteReplacement("\\\"");
+     public String toString()
+     {
+-        return "\"" + this.data.replace("\"", "\\\"") + "\"";
++        return "\"" + QUOTES.matcher(this.data).replaceAll(QUOTE_REPLACEMENT) + "\"";
+     }
+ 
+     /**
+diff --git a/src/minecraft/net/minecraft/tileentity/TileEntitySign.java b/src/minecraft/net/minecraft/tileentity/TileEntitySign.java
+index 770cd35..25ec34f 100644
+--- a/src/minecraft/net/minecraft/tileentity/TileEntitySign.java
++++ b/src/minecraft/net/minecraft/tileentity/TileEntitySign.java
+@@ -22,6 +22,8 @@ import net.minecraft.world.World;
+ public class TileEntitySign extends TileEntity
+ {
+     public final IChatComponent[] signText = new IChatComponent[] {new ChatComponentText(""), new ChatComponentText(""), new ChatComponentText(""), new ChatComponentText("")};
++    /** Prevent lines from being re-rendered every tick when it's always going to be the same output */
++    public final String[] cachedRenderLines = new String[signText.length];
+ 
+     /**
+      * The index of the line currently being edited. Only used on client side, but defined on both. Note this is only
+@@ -112,6 +114,7 @@ public class TileEntitySign extends TileEntity
+             {
+                 this.signText[i] = new ChatComponentText(s);
+             }
++            this.cachedRenderLines[i] = null;
+         }
+ 
+         this.stats.readStatsFromNBT(compound);
+diff --git a/src/minecraft/net/minecraft/util/BlockPos.java b/src/minecraft/net/minecraft/util/BlockPos.java
+index a941439..d5890bc 100644
+--- a/src/minecraft/net/minecraft/util/BlockPos.java
++++ b/src/minecraft/net/minecraft/util/BlockPos.java
+@@ -267,9 +267,13 @@ public class BlockPos extends Vec3i
+     }
+ 
+     public static Iterable<BlockPos.MutableBlockPos> getAllInBoxMutable(BlockPos from, BlockPos to)
++    { return getAllInBoxMutable(from.getX(), from.getY(), from.getZ(), to.getX(), to.getY(), to.getZ()); }
++    public static Iterable<BlockPos.MutableBlockPos> getAllInBoxMutable(int fromX, int fromY, int fromZ, int toX, int toY, int toZ)
+     {
+-        final BlockPos blockpos = new BlockPos(Math.min(from.getX(), to.getX()), Math.min(from.getY(), to.getY()), Math.min(from.getZ(), to.getZ()));
+-        final BlockPos blockpos1 = new BlockPos(Math.max(from.getX(), to.getX()), Math.max(from.getY(), to.getY()), Math.max(from.getZ(), to.getZ()));
++        //final BlockPos blockpos = new BlockPos(Math.min(from.getX(), to.getX()), Math.min(from.getY(), to.getY()), Math.min(from.getZ(), to.getZ()));
++        //final BlockPos blockpos1 = new BlockPos(Math.max(from.getX(), to.getX()), Math.max(from.getY(), to.getY()), Math.max(from.getZ(), to.getZ()));
++        final int minX = Math.min(fromX, toX); final int minY = Math.min(fromY, toY); final int minZ = Math.min(fromZ, toZ);
++        final int maxX = Math.max(fromX, toX); final int maxY = Math.max(fromY, toY); final int maxZ = Math.max(fromZ, toZ);
+         return new Iterable<BlockPos.MutableBlockPos>()
+         {
+             public Iterator<BlockPos.MutableBlockPos> iterator()
+@@ -281,10 +285,10 @@ public class BlockPos extends Vec3i
+                     {
+                         if (this.theBlockPos == null)
+                         {
+-                            this.theBlockPos = new BlockPos.MutableBlockPos(blockpos.getX(), blockpos.getY(), blockpos.getZ());
++                            this.theBlockPos = new BlockPos.MutableBlockPos(minX, minY, minZ);
+                             return this.theBlockPos;
+                         }
+-                        else if (this.theBlockPos.equals(blockpos1))
++                        else if (this.theBlockPos.getX() == maxX && this.theBlockPos.getY() == maxY && this.theBlockPos.getZ() == maxZ)
+                         {
+                             return (BlockPos.MutableBlockPos)this.endOfData();
+                         }
+@@ -294,19 +298,19 @@ public class BlockPos extends Vec3i
+                             int j = this.theBlockPos.getY();
+                             int k = this.theBlockPos.getZ();
+ 
+-                            if (i < blockpos1.getX())
++                            if (i < maxX)
+                             {
+                                 ++i;
+                             }
+-                            else if (j < blockpos1.getY())
++                            else if (j < maxY)
+                             {
+-                                i = blockpos.getX();
++                                i = minX;
+                                 ++j;
+                             }
+-                            else if (k < blockpos1.getZ())
++                            else if (k < maxZ)
+                             {
+-                                i = blockpos.getX();
+-                                j = blockpos.getY();
++                                i = minX;
++                                j = minY;
+                                 ++k;
+                             }
+ 
+@@ -321,6 +325,16 @@ public class BlockPos extends Vec3i
+         };
+     }
+ 
++    /**
++     * Calculate squared distance to the given coordinates
++     */
++    public static double distanceSq(int fromX, int fromY, int fromZ, double toX, double toY, double toZ) {
++        double d0 = fromX - toX;
++        double d1 = fromY - toY;
++        double d2 = fromZ - toZ;
++        return d0 * d0 + d1 * d1 + d2 * d2;
++    }
++
+     public static final class MutableBlockPos extends BlockPos
+     {
+         private int x;
+@@ -355,6 +369,7 @@ public class BlockPos extends Vec3i
+             return this.z;
+         }
+ 
++        /** Sets X, Y, and Z in this class */
+         public BlockPos.MutableBlockPos func_181079_c(int p_181079_1_, int p_181079_2_, int p_181079_3_)
+         {
+             this.x = p_181079_1_;
+diff --git a/src/minecraft/net/minecraft/world/ChunkCache.java b/src/minecraft/net/minecraft/world/ChunkCache.java
+index 27a01da..2747a97 100644
+--- a/src/minecraft/net/minecraft/world/ChunkCache.java
++++ b/src/minecraft/net/minecraft/world/ChunkCache.java
+@@ -82,11 +82,13 @@ public class ChunkCache implements IBlockAccess
+     }
+ 
+     public IBlockState getBlockState(BlockPos pos)
++    { return this.getBlockState(pos.getX(), pos.getY(), pos.getZ()); }
++    public IBlockState getBlockState(int x, int y, int z)
+     {
+-        if (pos.getY() >= 0 && pos.getY() < 256)
++        if (y >= 0 && y < 256)
+         {
+-            int i = (pos.getX() >> 4) - this.chunkX;
+-            int j = (pos.getZ() >> 4) - this.chunkZ;
++            int i = (x >> 4) - this.chunkX;
++            int j = (z >> 4) - this.chunkZ;
+ 
+             if (i >= 0 && i < this.chunkArray.length && j >= 0 && j < this.chunkArray[i].length)
+             {
+@@ -94,7 +96,7 @@ public class ChunkCache implements IBlockAccess
+ 
+                 if (chunk != null)
+                 {
+-                    return chunk.getBlockState(pos);
++                    return chunk.getBlockState(x, y, z);
+                 }
+             }
+         }
+@@ -119,7 +121,7 @@ public class ChunkCache implements IBlockAccess
+             {
+                 int l = 0;
+ 
+-                for (EnumFacing enumfacing : EnumFacing.values())
++                for (EnumFacing enumfacing : EnumFacing.VALUES)
+                 {
+                     int k = this.getLightFor(p_175629_1_, pos.offset(enumfacing));
+ 
+diff --git a/src/minecraft/net/minecraft/world/IBlockAccess.java b/src/minecraft/net/minecraft/world/IBlockAccess.java
+index 3597e23..30af5b8 100644
+--- a/src/minecraft/net/minecraft/world/IBlockAccess.java
++++ b/src/minecraft/net/minecraft/world/IBlockAccess.java
+@@ -13,6 +13,7 @@ public interface IBlockAccess
+     int getCombinedLight(BlockPos pos, int lightValue);
+ 
+     IBlockState getBlockState(BlockPos pos);
++    IBlockState getBlockState(int x, int y, int z);
+ 
+     /**
+      * Checks to see if an air block exists at the provided location. Note that this only checks to see if the blocks
+diff --git a/src/minecraft/net/minecraft/world/IWorldAccess.java b/src/minecraft/net/minecraft/world/IWorldAccess.java
+index 8deb711..8393797 100644
+--- a/src/minecraft/net/minecraft/world/IWorldAccess.java
++++ b/src/minecraft/net/minecraft/world/IWorldAccess.java
+@@ -9,6 +9,7 @@ public interface IWorldAccess
+     void markBlockForUpdate(BlockPos pos);
+ 
+     void notifyLightSet(BlockPos pos);
++    void notifyLightSet(int x, int y, int z);
+ 
+     /**
+      * On the client, re-renders all blocks in this range, inclusive. On the server, does nothing. Args: min x, min y,
+diff --git a/src/minecraft/net/minecraft/world/World.java b/src/minecraft/net/minecraft/world/World.java
+index fbb63ca..25473a2 100644
+--- a/src/minecraft/net/minecraft/world/World.java
++++ b/src/minecraft/net/minecraft/world/World.java
+@@ -239,7 +239,9 @@ public abstract class World implements IBlockAccess
+      */
+     private boolean isValid(BlockPos pos)
+     {
+-        return pos.getX() >= -30000000 && pos.getZ() >= -30000000 && pos.getX() < 30000000 && pos.getZ() < 30000000 && pos.getY() >= 0 && pos.getY() < 256;
++        return this.isValid(pos.getX(), pos.getY(), pos.getZ()); }
++    private boolean isValid(int x, int y, int z) {
++        return x >= -30000000 && z >= -30000000 && x < 30000000 && z < 30000000 && y >= 0 && y < 256;
+     }
+ 
+     /**
+@@ -255,10 +257,16 @@ public abstract class World implements IBlockAccess
+     {
+         return this.isBlockLoaded(pos, true);
+     }
++    public boolean isBlockLoaded(int x, int y, int z) {
++        return this.isBlockLoaded(x, y, z, true);
++    }
+ 
+     public boolean isBlockLoaded(BlockPos pos, boolean allowEmpty)
+     {
+-        return !this.isValid(pos) ? false : this.isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4, allowEmpty);
++        return this.isBlockLoaded(pos.getX(), pos.getY(), pos.getZ(), allowEmpty);
++    }
++    public boolean isBlockLoaded(int x, int y, int z, boolean allowEmpty) {
++        return this.isValid(x, y, z) && this.isChunkLoaded(x >> 4, z >> 4, allowEmpty);
+     }
+ 
+     public boolean isAreaLoaded(BlockPos center, int radius)
+@@ -268,7 +276,11 @@ public abstract class World implements IBlockAccess
+ 
+     public boolean isAreaLoaded(BlockPos center, int radius, boolean allowEmpty)
+     {
+-        return this.isAreaLoaded(center.getX() - radius, center.getY() - radius, center.getZ() - radius, center.getX() + radius, center.getY() + radius, center.getZ() + radius, allowEmpty);
++        return this.isAreaLoaded(center.getX(), center.getY(), center.getZ(), radius, allowEmpty);
++    }
++    public boolean isAreaLoaded(int centerX, int centerY, int centerZ, int radius, boolean allowEmpty)
++    {
++        return this.isAreaLoaded(centerX - radius, centerY - radius, centerZ - radius, centerX + radius, centerY + radius, centerZ + radius, allowEmpty);
+     }
+ 
+     public boolean isAreaLoaded(BlockPos from, BlockPos to)
+@@ -329,6 +341,10 @@ public abstract class World implements IBlockAccess
+         return this.getChunkFromChunkCoords(pos.getX() >> 4, pos.getZ() >> 4);
+     }
+ 
++    public Chunk getChunkFromBlockCoords(int blockX, int blockZ) {
++        return this.getChunkFromChunkCoords(blockX >> 4, blockZ >> 4);
++    }
++
+     /**
+      * Returns back a chunk looked up by chunk coordinates Args: x, y
+      */
+@@ -566,8 +582,9 @@ public abstract class World implements IBlockAccess
+     }
+ 
+     public boolean canSeeSky(BlockPos pos)
+-    {
+-        return this.getChunkFromBlockCoords(pos).canSeeSky(pos);
++    { return this.canSeeSky(pos.getX(), pos.getY(), pos.getZ()); }
++    public boolean canSeeSky(int x, int y, int z) {
++        return this.getChunkFromBlockCoords(x, z).canSeeSky(x, y, z);
+     }
+ 
+     public boolean canBlockSeeSky(BlockPos pos)
+@@ -601,39 +618,44 @@ public abstract class World implements IBlockAccess
+         }
+     }
+ 
+-    public int getLight(BlockPos pos)
++    public int getLight(BlockPos pos) { return this.getLight(pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLight(int x, int y, int z)
+     {
+-        if (pos.getY() < 0)
++        if (y < 0)
+         {
+             return 0;
+         }
+         else
+         {
+-            if (pos.getY() >= 256)
++            if (y >= 256)
+             {
+-                pos = new BlockPos(pos.getX(), 255, pos.getZ());
++                y = 255;
+             }
+ 
+-            return this.getChunkFromBlockCoords(pos).getLightSubtracted(pos, 0);
++            return this.getChunkFromBlockCoords(x, z).getLightSubtracted(x, y, z, 0);
+         }
+     }
+ 
+     public int getLightFromNeighbors(BlockPos pos)
++    { return this.getLightFromNeighbors(pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLightFromNeighbors(int x, int y, int z)
+     {
+-        return this.getLight(pos, true);
++        return this.getLight(x, y, z, true);
+     }
+ 
+     public int getLight(BlockPos pos, boolean checkNeighbors)
++    { return this.getLight(pos.getX(), pos.getY(), pos.getZ(), checkNeighbors); }
++    public int getLight(int x, int y, int z, boolean checkNeighbors)
+     {
+-        if (pos.getX() >= -30000000 && pos.getZ() >= -30000000 && pos.getX() < 30000000 && pos.getZ() < 30000000)
++        if (x >= -30000000 && z >= -30000000 && x < 30000000 && z < 30000000)
+         {
+-            if (checkNeighbors && this.getBlockState(pos).getBlock().getUseNeighborBrightness())
++            if (checkNeighbors && this.getBlockState(x, y, z).getBlock().getUseNeighborBrightness())
+             {
+-                int i1 = this.getLight(pos.up(), false);
+-                int i = this.getLight(pos.east(), false);
+-                int j = this.getLight(pos.west(), false);
+-                int k = this.getLight(pos.south(), false);
+-                int l = this.getLight(pos.north(), false);
++                int i1 = this.getLight(x, y + 1, z, false); // up
++                int i = this.getLight(x + 1, y, z, false); // east
++                int j = this.getLight(x - 1, y, z, false); // west
++                int k = this.getLight(x, y, z + 1, false); // south
++                int l = this.getLight(x, y, z - 1, false); // north
+ 
+                 if (i > i1)
+                 {
+@@ -657,19 +679,19 @@ public abstract class World implements IBlockAccess
+ 
+                 return i1;
+             }
+-            else if (pos.getY() < 0)
++            else if (y < 0)
+             {
+                 return 0;
+             }
+             else
+             {
+-                if (pos.getY() >= 256)
++                if (y >= 256)
+                 {
+-                    pos = new BlockPos(pos.getX(), 255, pos.getZ());
++                    y = 255;
+                 }
+ 
+-                Chunk chunk = this.getChunkFromBlockCoords(pos);
+-                return chunk.getLightSubtracted(pos, this.skylightSubtracted);
++                Chunk chunk = this.getChunkFromBlockCoords(x, z);
++                return chunk.getLightSubtracted(x, y, z, this.skylightSubtracted);
+             }
+         }
+         else
+@@ -728,6 +750,8 @@ public abstract class World implements IBlockAccess
+     }
+ 
+     public int getLightFromNeighborsFor(EnumSkyBlock type, BlockPos pos)
++    { return this.getLightFromNeighborsFor(type, pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLightFromNeighborsFor(EnumSkyBlock type, int x, int y, int z)
+     {
+         if (this.provider.getHasNoSky() && type == EnumSkyBlock.SKY)
+         {
+@@ -735,26 +759,26 @@ public abstract class World implements IBlockAccess
+         }
+         else
+         {
+-            if (pos.getY() < 0)
++            if (y < 0)
+             {
+-                pos = new BlockPos(pos.getX(), 0, pos.getZ());
++                y = 0;
+             }
+ 
+-            if (!this.isValid(pos))
++            /*if (!this.isValid(pos)) isBlockLoaded checks isValid
+             {
+                 return type.defaultLightValue;
+             }
+-            else if (!this.isBlockLoaded(pos))
++            else*/ if (!this.isBlockLoaded(x, y, z))
+             {
+                 return type.defaultLightValue;
+             }
+-            else if (this.getBlockState(pos).getBlock().getUseNeighborBrightness())
++            else if (this.getBlockState(x, y, z).getBlock().getUseNeighborBrightness())
+             {
+-                int i1 = this.getLightFor(type, pos.up());
+-                int i = this.getLightFor(type, pos.east());
+-                int j = this.getLightFor(type, pos.west());
+-                int k = this.getLightFor(type, pos.south());
+-                int l = this.getLightFor(type, pos.north());
++                int i1 = this.getLightFor(type, x, y + 1, z); // up
++                int i = this.getLightFor(type, x + 1, y, z); // east
++                int j = this.getLightFor(type, x - 1, y, z); // west
++                int k = this.getLightFor(type, x, y, z + 1); // south
++                int l = this.getLightFor(type, x, y, z - 1); // north
+ 
+                 if (i > i1)
+                 {
+@@ -780,59 +804,67 @@ public abstract class World implements IBlockAccess
+             }
+             else
+             {
+-                Chunk chunk = this.getChunkFromBlockCoords(pos);
+-                return chunk.getLightFor(type, pos);
++                Chunk chunk = this.getChunkFromBlockCoords(x, z);
++                return chunk.getLightFor(type, x, y, z);
+             }
+         }
+     }
+ 
+     public int getLightFor(EnumSkyBlock type, BlockPos pos)
+     {
+-        if (pos.getY() < 0)
++        return this.getLightFor(type, pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLightFor(EnumSkyBlock type, int x, int y, int z) {
++        if (y < 0)
+         {
+-            pos = new BlockPos(pos.getX(), 0, pos.getZ());
++            y = 0;
+         }
+ 
+-        if (!this.isValid(pos))
++        /*if (!this.isValid(pos)) Also called by isBlockLoaded
+         {
+             return type.defaultLightValue;
+         }
+-        else if (!this.isBlockLoaded(pos))
++        else*/ if (!this.isBlockLoaded(x, y, z))
+         {
+             return type.defaultLightValue;
+         }
+         else
+         {
+-            Chunk chunk = this.getChunkFromBlockCoords(pos);
+-            return chunk.getLightFor(type, pos);
++            Chunk chunk = this.getChunkFromBlockCoords(x, z);
++            return chunk.getLightFor(type, x, y, z);
+         }
+     }
+ 
+     public void setLightFor(EnumSkyBlock type, BlockPos pos, int lightValue)
++    { this.setLightFor(type, pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public void setLightFor(EnumSkyBlock type, int x, int y, int z, int lightValue)
+     {
+-        if (this.isValid(pos))
++        if (this.isValid(x, y, z))
+         {
+-            if (this.isBlockLoaded(pos))
++            if (this.isBlockLoaded(x, y, z))
+             {
+-                Chunk chunk = this.getChunkFromBlockCoords(pos);
+-                chunk.setLightFor(type, pos, lightValue);
+-                this.notifyLightSet(pos);
++                Chunk chunk = this.getChunkFromBlockCoords(x, z);
++                chunk.setLightFor(type, x, y, z, lightValue);
++                this.notifyLightSet(x, y, z);
+             }
+         }
+     }
+ 
+     public void notifyLightSet(BlockPos pos)
++    { this.notifyLightSet(pos.getX(), pos.getY(), pos.getZ()); }
++    public void notifyLightSet(int x, int y, int z)
+     {
+         for (int i = 0; i < this.worldAccesses.size(); ++i)
+         {
+-            ((IWorldAccess)this.worldAccesses.get(i)).notifyLightSet(pos);
++            this.worldAccesses.get(i).notifyLightSet(x, y, z);
+         }
+     }
+ 
+     public int getCombinedLight(BlockPos pos, int lightValue)
++    { return this.getCombinedLight(pos.getX(), pos.getY(), pos.getZ(), lightValue); }
++    public int getCombinedLight(int x, int y, int z, int lightValue)
+     {
+-        int i = this.getLightFromNeighborsFor(EnumSkyBlock.SKY, pos);
+-        int j = this.getLightFromNeighborsFor(EnumSkyBlock.BLOCK, pos);
++        int i = this.getLightFromNeighborsFor(EnumSkyBlock.SKY, x, y, z);
++        int j = this.getLightFromNeighborsFor(EnumSkyBlock.BLOCK, x, y, z);
+ 
+         if (j < lightValue)
+         {
+@@ -843,20 +875,24 @@ public abstract class World implements IBlockAccess
+     }
+ 
+     public float getLightBrightness(BlockPos pos)
++    { return this.getLightBrightness(pos.getX(), pos.getY(), pos.getZ()); }
++    public float getLightBrightness(int x, int y, int z)
+     {
+-        return this.provider.getLightBrightnessTable()[this.getLightFromNeighbors(pos)];
++        return this.provider.getLightBrightnessTable()[this.getLightFromNeighbors(x, y, z)];
+     }
+ 
+     public IBlockState getBlockState(BlockPos pos)
+     {
+-        if (!this.isValid(pos))
++        return this.getBlockState(pos.getX(), pos.getY(), pos.getZ()); }
++    public IBlockState getBlockState(int x, int y, int z) {
++        if (!this.isValid(x, y, z))
+         {
+             return Blocks.air.getDefaultState();
+         }
+         else
+         {
+-            Chunk chunk = this.getChunkFromBlockCoords(pos);
+-            return chunk.getBlockState(pos);
++            Chunk chunk = this.getChunkFromBlockCoords(x, z);
++            return chunk.getBlockState(x, y, z);
+         }
+     }
+ 
+@@ -1985,7 +2021,7 @@ public abstract class World implements IBlockAccess
+         int l = MathHelper.floor_double(bb.maxY);
+         int i1 = MathHelper.floor_double(bb.minZ);
+         int j1 = MathHelper.floor_double(bb.maxZ);
+-        BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
++        //BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
+ 
+         for (int k1 = i; k1 <= j; ++k1)
+         {
+@@ -1993,7 +2029,7 @@ public abstract class World implements IBlockAccess
+             {
+                 for (int i2 = i1; i2 <= j1; ++i2)
+                 {
+-                    Block block = this.getBlockState(blockpos$mutableblockpos.func_181079_c(k1, l1, i2)).getBlock();
++                    Block block = this.getBlockState(k1, l1, i2).getBlock();
+ 
+                     if (block.getMaterial() != Material.air)
+                     {
+@@ -2141,7 +2177,7 @@ public abstract class World implements IBlockAccess
+         int l = MathHelper.floor_double(bb.maxY + 1.0D);
+         int i1 = MathHelper.floor_double(bb.minZ);
+         int j1 = MathHelper.floor_double(bb.maxZ + 1.0D);
+-        BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
++        //BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
+ 
+         for (int k1 = i; k1 < j; ++k1)
+         {
+@@ -2149,7 +2185,7 @@ public abstract class World implements IBlockAccess
+             {
+                 for (int i2 = i1; i2 < j1; ++i2)
+                 {
+-                    if (this.getBlockState(blockpos$mutableblockpos.func_181079_c(k1, l1, i2)).getBlock().getMaterial() == materialIn)
++                    if (this.getBlockState(k1, l1, i2).getBlock().getMaterial() == materialIn)
+                     {
+                         return true;
+                     }
+@@ -2642,15 +2678,16 @@ public abstract class World implements IBlockAccess
+         {
+             this.updateLCG = this.updateLCG * 3 + 1013904223;
+             int i = this.updateLCG >> 2;
+-            int j = i & 15;
+-            int k = i >> 8 & 15;
+-            int l = i >> 16 & 255;
++            int j = i & 15; // x
++            int k = i >> 8 & 15; // z
++            int l = i >> 16 & 255; // y
++            int x = j; int z = k;
+             BlockPos blockpos = new BlockPos(j, l, k);
+-            Block block = chunkIn.getBlock(blockpos);
++            Block block = chunkIn.getBlock(x, l, z);
+             j = j + p_147467_1_;
+             k = k + p_147467_2_;
+ 
+-            if (block.getMaterial() == Material.air && this.getLight(blockpos) <= this.rand.nextInt(8) && this.getLightFor(EnumSkyBlock.SKY, blockpos) <= 0)
++            if (block.getMaterial() == Material.air && this.getLight(x, l, z) <= this.rand.nextInt(8) && this.getLightFor(EnumSkyBlock.SKY, blockpos) <= 0)
+             {
+                 EntityPlayer entityplayer = this.getClosestPlayer((double)j + 0.5D, (double)l + 0.5D, (double)k + 0.5D, 8.0D);
+ 
+@@ -2765,15 +2802,17 @@ public abstract class World implements IBlockAccess
+     }
+ 
+     public boolean checkLight(BlockPos pos)
++    { return this.checkLight(pos.getX(), pos.getY(), pos.getZ()); }
++    public boolean checkLight(int x, int y, int z)
+     {
+         boolean flag = false;
+ 
+         if (!this.provider.getHasNoSky())
+         {
+-            flag |= this.checkLightFor(EnumSkyBlock.SKY, pos);
++            flag = this.checkLightFor(EnumSkyBlock.SKY, x, y, z);
+         }
+ 
+-        flag = flag | this.checkLightFor(EnumSkyBlock.BLOCK, pos);
++        flag = flag | this.checkLightFor(EnumSkyBlock.BLOCK, x, y, z);
+         return flag;
+     }
+ 
+@@ -2781,14 +2820,16 @@ public abstract class World implements IBlockAccess
+      * gets the light level at the supplied position
+      */
+     private int getRawLight(BlockPos pos, EnumSkyBlock lightType)
++    { return this.getRawLight(pos.getX(), pos.getY(), pos.getZ(), lightType); }
++    private int getRawLight(int x, int y, int z, EnumSkyBlock lightType)
+     {
+-        if (lightType == EnumSkyBlock.SKY && this.canSeeSky(pos))
++        if (lightType == EnumSkyBlock.SKY && this.canSeeSky(x, y, z))
+         {
+             return 15;
+         }
+         else
+         {
+-            Block block = this.getBlockState(pos).getBlock();
++            Block block = this.getBlockState(x, y, z).getBlock();
+             int i = lightType == EnumSkyBlock.SKY ? 0 : block.getLightValue();
+             int j = block.getLightOpacity();
+ 
+@@ -2812,10 +2853,9 @@ public abstract class World implements IBlockAccess
+             }
+             else
+             {
+-                for (EnumFacing enumfacing : EnumFacing.values())
++                for (EnumFacing enumfacing : EnumFacing.VALUES)
+                 {
+-                    BlockPos blockpos = pos.offset(enumfacing);
+-                    int k = this.getLightFor(lightType, blockpos) - j;
++                    int k = this.getLightFor(lightType, x + enumfacing.getFrontOffsetX(), y + enumfacing.getFrontOffsetY(), z + enumfacing.getFrontOffsetZ()) - j;
+ 
+                     if (k > i)
+                     {
+@@ -2834,8 +2874,9 @@ public abstract class World implements IBlockAccess
+     }
+ 
+     public boolean checkLightFor(EnumSkyBlock lightType, BlockPos pos)
+-    {
+-        if (!this.isAreaLoaded(pos, 17, false))
++    { return this.checkLightFor(lightType, pos.getX(), pos.getY(), pos.getZ()); }
++    public boolean checkLightFor(EnumSkyBlock lightType, int x, int y, int z) {
++        if (!this.isAreaLoaded(x, y, z, 17, false))
+         {
+             return false;
+         }
+@@ -2844,11 +2885,11 @@ public abstract class World implements IBlockAccess
+             int i = 0;
+             int j = 0;
+             this.theProfiler.startSection("getBrightness");
+-            int k = this.getLightFor(lightType, pos);
+-            int l = this.getRawLight(pos, lightType);
+-            int i1 = pos.getX();
+-            int j1 = pos.getY();
+-            int k1 = pos.getZ();
++            int k = this.getLightFor(lightType, x, y, z);
++            int l = this.getRawLight(x, y, z, lightType);
++            int i1 = x;
++            int j1 = y;
++            int k1 = z;
+ 
+             if (l > k)
+             {
+@@ -2865,12 +2906,12 @@ public abstract class World implements IBlockAccess
+                     int j2 = (l1 >> 6 & 63) - 32 + j1;
+                     int k2 = (l1 >> 12 & 63) - 32 + k1;
+                     int l2 = l1 >> 18 & 15;
+-                    BlockPos blockpos = new BlockPos(i2, j2, k2);
+-                    int i3 = this.getLightFor(lightType, blockpos);
++                    //BlockPos blockpos = new BlockPos(i2, j2, k2);
++                    int i3 = this.getLightFor(lightType, i2, j2, k2);
+ 
+                     if (i3 == l2)
+                     {
+-                        this.setLightFor(lightType, blockpos, 0);
++                        this.setLightFor(lightType, i2, j2, k2, 0);
+ 
+                         if (l2 > 0)
+                         {
+@@ -2880,16 +2921,16 @@ public abstract class World implements IBlockAccess
+ 
+                             if (j3 + k3 + l3 < 17)
+                             {
+-                                BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
++                               // BlockPos.MutableBlockPos blockpos$mutableblockpos = new BlockPos.MutableBlockPos();
+ 
+-                                for (EnumFacing enumfacing : EnumFacing.values())
++                                for (EnumFacing enumfacing : EnumFacing.VALUES)
+                                 {
+                                     int i4 = i2 + enumfacing.getFrontOffsetX();
+                                     int j4 = j2 + enumfacing.getFrontOffsetY();
+                                     int k4 = k2 + enumfacing.getFrontOffsetZ();
+-                                    blockpos$mutableblockpos.func_181079_c(i4, j4, k4);
+-                                    int l4 = Math.max(1, this.getBlockState(blockpos$mutableblockpos).getBlock().getLightOpacity());
+-                                    i3 = this.getLightFor(lightType, blockpos$mutableblockpos);
++                                    //blockpos$mutableblockpos.func_181079_c(i4, j4, k4);
++                                    int l4 = Math.max(1, this.getBlockState(i4, j4, k4).getBlock().getLightOpacity());
++                                    i3 = this.getLightFor(lightType, i4, j4, k4);
+ 
+                                     if (i3 == l2 - l4 && j < this.lightUpdateBlockList.length)
+                                     {
+@@ -2913,13 +2954,13 @@ public abstract class World implements IBlockAccess
+                 int j5 = (i5 & 63) - 32 + i1;
+                 int k5 = (i5 >> 6 & 63) - 32 + j1;
+                 int l5 = (i5 >> 12 & 63) - 32 + k1;
+-                BlockPos blockpos1 = new BlockPos(j5, k5, l5);
+-                int i6 = this.getLightFor(lightType, blockpos1);
+-                int j6 = this.getRawLight(blockpos1, lightType);
++                //BlockPos blockpos1 = new BlockPos(j5, k5, l5);
++                int i6 = this.getLightFor(lightType, j5, k5, l5);
++                int j6 = this.getRawLight(j5, k5, l5, lightType);
+ 
+                 if (j6 != i6)
+                 {
+-                    this.setLightFor(lightType, blockpos1, j6);
++                    this.setLightFor(lightType, j5, k5, l5, j6);
+ 
+                     if (j6 > i6)
+                     {
+@@ -2930,32 +2971,32 @@ public abstract class World implements IBlockAccess
+ 
+                         if (k6 + l6 + i7 < 17 && flag)
+                         {
+-                            if (this.getLightFor(lightType, blockpos1.west()) < j6)
++                            if (this.getLightFor(lightType, j5 - 1, k5, l5) < j6) // west
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 - 1 - i1 + 32 + (k5 - j1 + 32 << 6) + (l5 - k1 + 32 << 12);
+                             }
+ 
+-                            if (this.getLightFor(lightType, blockpos1.east()) < j6)
++                            if (this.getLightFor(lightType, j5 + 1, k5, l5) < j6) // east
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 + 1 - i1 + 32 + (k5 - j1 + 32 << 6) + (l5 - k1 + 32 << 12);
+                             }
+ 
+-                            if (this.getLightFor(lightType, blockpos1.down()) < j6)
++                            if (this.getLightFor(lightType, j5, k5 - 1, l5) < j6) // down
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 - i1 + 32 + (k5 - 1 - j1 + 32 << 6) + (l5 - k1 + 32 << 12);
+                             }
+ 
+-                            if (this.getLightFor(lightType, blockpos1.up()) < j6)
++                            if (this.getLightFor(lightType, j5, k5 + 1, l5) < j6) // up
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 - i1 + 32 + (k5 + 1 - j1 + 32 << 6) + (l5 - k1 + 32 << 12);
+                             }
+ 
+-                            if (this.getLightFor(lightType, blockpos1.north()) < j6)
++                            if (this.getLightFor(lightType, j5, k5, l5 - 1) < j6) // north
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 - i1 + 32 + (k5 - j1 + 32 << 6) + (l5 - 1 - k1 + 32 << 12);
+                             }
+ 
+-                            if (this.getLightFor(lightType, blockpos1.south()) < j6)
++                            if (this.getLightFor(lightType, j5, k5, l5 + 1) < j6) // south
+                             {
+                                 this.lightUpdateBlockList[j++] = j5 - i1 + 32 + (k5 - j1 + 32 << 6) + (l5 + 1 - k1 + 32 << 12);
+                             }
+diff --git a/src/minecraft/net/minecraft/world/WorldManager.java b/src/minecraft/net/minecraft/world/WorldManager.java
+index e9907af..4ec8e72 100644
+--- a/src/minecraft/net/minecraft/world/WorldManager.java
++++ b/src/minecraft/net/minecraft/world/WorldManager.java
+@@ -78,6 +78,8 @@ public class WorldManager implements IWorldAccess
+     public void notifyLightSet(BlockPos pos)
+     {
+     }
++    public void notifyLightSet(int x, int y, int z) {
++    }
+ 
+     public void playRecord(String recordName, BlockPos blockPosIn)
+     {
+diff --git a/src/minecraft/net/minecraft/world/chunk/Chunk.java b/src/minecraft/net/minecraft/world/chunk/Chunk.java
+index 25dd37f..b7c3ff1 100644
+--- a/src/minecraft/net/minecraft/world/chunk/Chunk.java
++++ b/src/minecraft/net/minecraft/world/chunk/Chunk.java
+@@ -565,7 +565,8 @@ public class Chunk
+ 
+     public Block getBlock(final BlockPos pos)
+     {
+-        try
++        return this.getBlock(pos.getX(), pos.getY(), pos.getZ()); }
++        /*try
+         {
+             return this.getBlock0(pos.getX() & 15, pos.getY(), pos.getZ() & 15);
+         }
+@@ -581,22 +582,24 @@ public class Chunk
+             });
+             throw reportedexception;
+         }
+-    }
++    }*/
+ 
+     public IBlockState getBlockState(final BlockPos pos)
++    { return this.getBlockState(pos.getX(), pos.getY(), pos.getZ()); }
++    public IBlockState getBlockState(final int x, final int y, final int z)
+     {
+         if (this.worldObj.getWorldType() == WorldType.DEBUG_WORLD)
+         {
+             IBlockState iblockstate = null;
+ 
+-            if (pos.getY() == 60)
++            if (y == 60)
+             {
+                 iblockstate = Blocks.barrier.getDefaultState();
+             }
+ 
+-            if (pos.getY() == 70)
++            if (y == 70)
+             {
+-                iblockstate = ChunkProviderDebug.func_177461_b(pos.getX(), pos.getZ());
++                iblockstate = ChunkProviderDebug.func_177461_b(x, z);
+             }
+ 
+             return iblockstate == null ? Blocks.air.getDefaultState() : iblockstate;
+@@ -605,15 +608,15 @@ public class Chunk
+         {
+             try
+             {
+-                if (pos.getY() >= 0 && pos.getY() >> 4 < this.storageArrays.length)
++                if (y >= 0 && y >> 4 < this.storageArrays.length)
+                 {
+-                    ExtendedBlockStorage extendedblockstorage = this.storageArrays[pos.getY() >> 4];
++                    ExtendedBlockStorage extendedblockstorage = this.storageArrays[y >> 4];
+ 
+                     if (extendedblockstorage != null)
+                     {
+-                        int j = pos.getX() & 15;
+-                        int k = pos.getY() & 15;
+-                        int i = pos.getZ() & 15;
++                        int j = x & 15;
++                        int k = y & 15;
++                        int i = z & 15;
+                         return extendedblockstorage.get(j, k, i);
+                     }
+                 }
+@@ -628,7 +631,7 @@ public class Chunk
+                 {
+                     public String call() throws Exception
+                     {
+-                        return CrashReportCategory.getCoordinateInfo(pos);
++                        return CrashReportCategory.getCoordinateInfo(new BlockPos(x, y, z));
+                     }
+                 });
+                 throw new ReportedException(crashreport);
+@@ -780,18 +783,20 @@ public class Chunk
+ 
+     public int getLightFor(EnumSkyBlock p_177413_1_, BlockPos pos)
+     {
+-        int i = pos.getX() & 15;
+-        int j = pos.getY();
+-        int k = pos.getZ() & 15;
++        return this.getLightFor(p_177413_1_, pos.getX(), pos.getY(), pos.getZ()); }
++    public int getLightFor(EnumSkyBlock p_177413_1_, int x, int j, int z) {
++        int i = x & 15;
++        int k = z & 15;
+         ExtendedBlockStorage extendedblockstorage = this.storageArrays[j >> 4];
+-        return extendedblockstorage == null ? (this.canSeeSky(pos) ? p_177413_1_.defaultLightValue : 0) : (p_177413_1_ == EnumSkyBlock.SKY ? (this.worldObj.provider.getHasNoSky() ? 0 : extendedblockstorage.getExtSkylightValue(i, j & 15, k)) : (p_177413_1_ == EnumSkyBlock.BLOCK ? extendedblockstorage.getExtBlocklightValue(i, j & 15, k) : p_177413_1_.defaultLightValue));
++        return extendedblockstorage == null ? (this.canSeeSky(x, j, z) ? p_177413_1_.defaultLightValue : 0) : (p_177413_1_ == EnumSkyBlock.SKY ? (this.worldObj.provider.getHasNoSky() ? 0 : extendedblockstorage.getExtSkylightValue(i, j & 15, k)) : (p_177413_1_ == EnumSkyBlock.BLOCK ? extendedblockstorage.getExtBlocklightValue(i, j & 15, k) : p_177413_1_.defaultLightValue));
+     }
+ 
+     public void setLightFor(EnumSkyBlock p_177431_1_, BlockPos pos, int value)
++    { this.setLightFor(p_177431_1_, pos.getX(), pos.getY(), pos.getZ(), value); }
++    public void setLightFor(EnumSkyBlock p_177431_1_, int x, int j, int z, int value)
+     {
+-        int i = pos.getX() & 15;
+-        int j = pos.getY();
+-        int k = pos.getZ() & 15;
++        int i = x & 15;
++        int k = z & 15;
+         ExtendedBlockStorage extendedblockstorage = this.storageArrays[j >> 4];
+ 
+         if (extendedblockstorage == null)
+@@ -815,11 +820,10 @@ public class Chunk
+         }
+     }
+ 
+-    public int getLightSubtracted(BlockPos pos, int amount)
++    public int getLightSubtracted(int x, int j, int z, int amount)
+     {
+-        int i = pos.getX() & 15;
+-        int j = pos.getY();
+-        int k = pos.getZ() & 15;
++        int i = x & 15;
++        int k = z & 15;
+         ExtendedBlockStorage extendedblockstorage = this.storageArrays[j >> 4];
+ 
+         if (extendedblockstorage == null)
+@@ -901,11 +905,11 @@ public class Chunk
+         this.entityLists[p_76608_2_].remove(entityIn);
+     }
+ 
+-    public boolean canSeeSky(BlockPos pos)
+-    {
+-        int i = pos.getX() & 15;
+-        int j = pos.getY();
+-        int k = pos.getZ() & 15;
++    public boolean canSeeSky(BlockPos pos) {
++        return this.canSeeSky(pos.getX(), pos.getY(), pos.getZ()); }
++    public boolean canSeeSky(int x, int j, int z) {
++        int i = x & 15;
++        int k = z & 15;
+         return j >= this.heightMap[k << 4 | i];
+     }
+ 
+@@ -1313,6 +1317,7 @@ public class Chunk
+         {
+             if ((p_177439_2_ & 1 << j) != 0)
+             {
++                int nonAirBlockCount = 0;
+                 if (this.storageArrays[j] == null)
+                 {
+                     this.storageArrays[j] = new ExtendedBlockStorage(j << 4, flag);
+@@ -1322,9 +1327,20 @@ public class Chunk
+ 
+                 for (int k = 0; k < achar.length; ++k)
+                 {
+-                    achar[k] = (char)((p_177439_1_[i + 1] & 255) << 8 | p_177439_1_[i] & 255);
++                    char c = (char)((p_177439_1_[i + 1] & 255) << 8 | p_177439_1_[i] & 255);
++                    achar[k] = c;
+                     i += 2;
++
++                    // Move valid block checks here for MAXIMUM EFFICIENCY
++                    // The client also doesn't care about tickable blocks so we just need to check range
++                    if (c != 0) {
++                        IBlockState blockState = Block.BLOCK_STATE_IDS.getByValue(c);
++                        if (blockState != null) {
++                            ++nonAirBlockCount;
++                        }
++                    }
+                 }
++                this.storageArrays[j].setBlockRefCount(nonAirBlockCount);
+             }
+             else if (p_177439_3_ && this.storageArrays[j] != null)
+             {
+@@ -1361,13 +1377,13 @@ public class Chunk
+             int k1 = i + this.blockBiomeArray.length;
+         }
+ 
+-        for (int j1 = 0; j1 < this.storageArrays.length; ++j1)
++        /*for (int j1 = 0; j1 < this.storageArrays.length; ++j1) Moved up
+         {
+             if (this.storageArrays[j1] != null && (p_177439_2_ & 1 << j1) != 0)
+             {
+                 this.storageArrays[j1].removeInvalidBlocks();
+             }
+-        }
++        }*/
+ 
+         this.isLightPopulated = true;
+         this.isTerrainPopulated = true;
+@@ -1438,7 +1454,8 @@ public class Chunk
+      */
+     public void enqueueRelightChecks()
+     {
+-        BlockPos blockpos = new BlockPos(this.xPosition << 4, 0, this.zPosition << 4);
++        //BlockPos blockpos = new BlockPos(this.xPosition << 4, 0, this.zPosition << 4);
++        int x = this.xPosition << 4; int y = 0; int z = this.zPosition << 4;
+ 
+         for (int i = 0; i < 8; ++i)
+         {
+@@ -1454,22 +1471,24 @@ public class Chunk
+ 
+             for (int i1 = 0; i1 < 16; ++i1)
+             {
+-                BlockPos blockpos1 = blockpos.add(k, (j << 4) + i1, l);
++                //BlockPos blockpos1 = blockpos.add(k, (j << 4) + i1, l);
++                int x1 = x + k; int y1 = y + ((j << 4) + i1); int z1 = z + l;
+                 boolean flag = i1 == 0 || i1 == 15 || k == 0 || k == 15 || l == 0 || l == 15;
+ 
+                 if (this.storageArrays[j] == null && flag || this.storageArrays[j] != null && this.storageArrays[j].getBlockByExtId(k, i1, l).getMaterial() == Material.air)
+                 {
+-                    for (EnumFacing enumfacing : EnumFacing.values())
++                    for (EnumFacing enumfacing : EnumFacing.VALUES)
+                     {
+-                        BlockPos blockpos2 = blockpos1.offset(enumfacing);
++                        //BlockPos blockpos2 = blockpos1.offset(enumfacing);
++                        int x2 = x1 + enumfacing.getFrontOffsetX(); int y2 = y1 + enumfacing.getFrontOffsetY(); int z2 = z1 + enumfacing.getFrontOffsetZ();
+ 
+-                        if (this.worldObj.getBlockState(blockpos2).getBlock().getLightValue() > 0)
++                        if (this.worldObj.getBlockState(x2, y2, z2).getBlock().getLightValue() > 0)
+                         {
+-                            this.worldObj.checkLight(blockpos2);
++                            this.worldObj.checkLight(x2, y2, z2);
+                         }
+                     }
+ 
+-                    this.worldObj.checkLight(blockpos1);
++                    this.worldObj.checkLight(x1, y1, z1);
+                 }
+             }
+         }
+diff --git a/src/minecraft/net/minecraft/world/chunk/storage/ExtendedBlockStorage.java b/src/minecraft/net/minecraft/world/chunk/storage/ExtendedBlockStorage.java
+index 4d476d9..7c98edd 100644
+--- a/src/minecraft/net/minecraft/world/chunk/storage/ExtendedBlockStorage.java
++++ b/src/minecraft/net/minecraft/world/chunk/storage/ExtendedBlockStorage.java
+@@ -164,7 +164,18 @@ public class ExtendedBlockStorage
+         int i = 0;
+         int j = 0;
+ 
+-        for (int k = 0; k < 16; ++k)
++        for (char c : this.data) {
++            IBlockState blockState = Block.BLOCK_STATE_IDS.getByValue(c);
++            Block block;
++            if (blockState != null && (block = blockState.getBlock()) != Blocks.air) {
++                ++i;
++                if (block.getTickRandomly()) {
++                    ++j;
++                }
++            }
++        }
++
++        /*for (int k = 0; k < 16; ++k)
+         {
+             for (int l = 0; l < 16; ++l)
+             {
+@@ -183,11 +194,14 @@ public class ExtendedBlockStorage
+                     }
+                 }
+             }
+-        }
++        }*/
+ 
+         this.blockRefCount = i;
+         this.tickRefCount = j;
+     }
++    public void setBlockRefCount(int nonAirBlockCount) {
++        this.blockRefCount = nonAirBlockCount;
++    }
+ 
+     public char[] getData()
+     {
+diff --git a/src/minecraft/net/optifine/override/ChunkCacheOF.java b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+index 250c63a..fdb3f02 100644
+--- a/src/minecraft/net/optifine/override/ChunkCacheOF.java
++++ b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+@@ -51,16 +51,18 @@ public class ChunkCacheOF implements IBlockAccess
+     }
+ 
+     private int getPositionIndex(BlockPos pos)
++    { return this.getPositionIndex(pos.getX(), pos.getY(), pos.getZ()); }
++    private int getPositionIndex(int x, int y, int z)
+     {
+-        int i = pos.getX() - this.posX;
++        int i = x - this.posX;
+ 
+         if (i >= 0 && i < this.sizeX)
+         {
+-            int j = pos.getY() - this.posY;
++            int j = y - this.posY;
+ 
+             if (j >= 0 && j < this.sizeY)
+             {
+-                int k = pos.getZ() - this.posZ;
++                int k = z - this.posZ;
+                 return k >= 0 && k < this.sizeZ ? k * this.sizeXY + j * this.sizeX + i : -1;
+             }
+             else
+@@ -109,8 +111,10 @@ public class ChunkCacheOF implements IBlockAccess
+     }
+ 
+     public IBlockState getBlockState(BlockPos pos)
++    { return this.getBlockState(pos.getX(), pos.getY(), pos.getZ()); }
++    public IBlockState getBlockState(int x, int y, int z)
+     {
+-        int i = this.getPositionIndex(pos);
++        int i = this.getPositionIndex(x, y, z);
+ 
+         if (i >= 0 && i < this.arraySize && this.blockStates != null)
+         {
+@@ -118,7 +122,7 @@ public class ChunkCacheOF implements IBlockAccess
+ 
+             if (iblockstate == null)
+             {
+-                iblockstate = this.chunkCache.getBlockState(pos);
++                iblockstate = this.chunkCache.getBlockState(x, y, z);
+                 this.blockStates[i] = iblockstate;
+             }
+ 
+@@ -126,7 +130,7 @@ public class ChunkCacheOF implements IBlockAccess
+         }
+         else
+         {
+-            return this.chunkCache.getBlockState(pos);
++            return this.chunkCache.getBlockState(x, y, z);
+         }
+     }
+ 
+diff --git a/src/minecraft/net/optifine/reflect/Reflector.java b/src/minecraft/net/optifine/reflect/Reflector.java
+index 646fb33..15b88a0 100644
+--- a/src/minecraft/net/optifine/reflect/Reflector.java
++++ b/src/minecraft/net/optifine/reflect/Reflector.java
+@@ -297,8 +297,8 @@ public class Reflector
+     public static ReflectorClass WorldEvent_Load = new ReflectorClass("net.minecraftforge.event.world.WorldEvent$Load");
+     public static ReflectorConstructor WorldEvent_Load_Constructor = new ReflectorConstructor(WorldEvent_Load, new Class[] {World.class});
+     private static boolean logVanilla = logEntry("*** Reflector Vanilla ***");
+-    public static ReflectorClass ChunkProviderClient = new ReflectorClass(ChunkProviderClient.class);
+-    public static ReflectorField ChunkProviderClient_chunkMapping = new ReflectorField(ChunkProviderClient, LongHashMap.class);
++    //public static ReflectorClass ChunkProviderClient = new ReflectorClass(ChunkProviderClient.class); Don't use reflection for this
++    //public static ReflectorField ChunkProviderClient_chunkMapping = new ReflectorField(ChunkProviderClient, LongHashMap.class);
+     public static ReflectorClass EntityVillager = new ReflectorClass(EntityVillager.class);
+     public static ReflectorField EntityVillager_careerId = new ReflectorField(new FieldLocatorTypes(EntityVillager.class, new Class[0], Integer.TYPE, new Class[] {Integer.TYPE, Boolean.TYPE, Boolean.TYPE, InventoryBasic.class}, "EntityVillager.careerId"));
+     public static ReflectorField EntityVillager_careerLevel = new ReflectorField(new FieldLocatorTypes(EntityVillager.class, new Class[] {Integer.TYPE}, Integer.TYPE, new Class[] {Boolean.TYPE, Boolean.TYPE, InventoryBasic.class}, "EntityVillager.careerLevel"));
+-- 
+2.35.3
+

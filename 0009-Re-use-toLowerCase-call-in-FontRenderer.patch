@@ -1,0 +1,32 @@
+From dd0ceaa749dccf85fafde3db27954663902843bf Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Wed, 3 Nov 2021 16:47:27 -0400
+Subject: [PATCH] Re-use toLowerCase call in FontRenderer
+
+---
+ src/minecraft/net/minecraft/client/gui/FontRenderer.java | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/minecraft/net/minecraft/client/gui/FontRenderer.java b/src/minecraft/net/minecraft/client/gui/FontRenderer.java
+index 814926e..b14703f 100644
+--- a/src/minecraft/net/minecraft/client/gui/FontRenderer.java
++++ b/src/minecraft/net/minecraft/client/gui/FontRenderer.java
+@@ -453,13 +453,14 @@ public class FontRenderer implements IResourceManagerReloadListener
+      */
+     private void renderStringAtPos(String p_78255_1_, boolean p_78255_2_)
+     {
++        String lowercase = p_78255_1_.toLowerCase(Locale.ENGLISH);
+         for (int i = 0; i < p_78255_1_.length(); ++i)
+         {
+             char c0 = p_78255_1_.charAt(i);
+ 
+             if (c0 == 167 && i + 1 < p_78255_1_.length())
+             {
+-                int l = "0123456789abcdefklmnor".indexOf(p_78255_1_.toLowerCase(Locale.ENGLISH).charAt(i + 1));
++                int l = "0123456789abcdefklmnor".indexOf(lowercase.charAt(i + 1));
+ 
+                 if (l < 16)
+                 {
+-- 
+2.35.3
+

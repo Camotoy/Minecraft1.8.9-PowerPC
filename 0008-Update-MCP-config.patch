@@ -1,0 +1,34 @@
+From 4fafa9526a979320f9c7a70d9ed739668d91a12c Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Wed, 3 Nov 2021 16:47:08 -0400
+Subject: [PATCH] Update MCP config
+
+---
+ conf/mcp.cfg | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/conf/mcp.cfg b/conf/mcp.cfg
+index eaa29be..2d98c65 100644
+--- a/conf/mcp.cfg
++++ b/conf/mcp.cfg
+@@ -40,7 +40,7 @@ DirNatives = %(DirJars)s/bin/natives
+ Client     = %(DirJars)s/bin/minecraft.jar
+ Server     = %(DirJars)s/minecraft_server.jar
+ LWJGL      = %(DirJars)s/bin/jinput.jar,%(DirJars)s/bin/lwjgl.jar,%(DirJars)s/bin/lwjgl_util.jar
+-MD5Client  = 396099e23e58309d21713ab5d7c1d1a8
++MD5Client  = 296054d45fcdf6d64b0388a56cc87ee9
+ MD5Server  = a0671390aa0691e70a950155aab06ffb
+ 
+ [RETROGUARD]
+@@ -174,7 +174,7 @@ CmdJadretro   = %s -jar %s {targetdir}
+ CmdFernflower = %s -jar %s -din=1 -rbr=1 -dgs=1 -asc=1 -rsy=1 -iec=1 -jvn=1 -log=WARN {extra} {indir} {outdir}
+ CmdExceptor   = %s -jar %s --jarIn {input} --jarOut {output} --mapIn {conf} --log {log} --applyMarkers --generateParams --lvt=LVT
+ CmdExceptorDry = %s -jar %s --jarIn {input} --mapIn {conf} --log {log} --applyMarkers --lvt=LVT
+-CmdRecomp     = %s -Xlint:-options -deprecation -g -source 1.6 -target 1.6 -classpath "{classpath}" -sourcepath {sourcepath} -d {outpath} @{javasrc}
++CmdRecomp     = %s -Xlint:-options -deprecation -g -source 1.5 -target 1.5 -classpath "{classpath}" -sourcepath {sourcepath} -d {outpath} @{javasrc}
+ CmdRecompScala = %s -encoding UTF-8 -deprecation -target:jvm-1.6 -classpath "{classpath}" -sourcepath {sourcepath} -d {outpath} @{javasrc} @{scalasrc}
+ CmdStartSrv   = %s -Xincgc -Xms1024M -Xmx1024M -cp "{classpath}" net.minecraft.server.MinecraftServer
+ CmdStartClt   = %s -Xincgc -Xms1024M -Xmx1024M -cp "{classpath}" -Djava.library.path={natives} Start
+-- 
+2.35.3
+

@@ -1,0 +1,194 @@
+From d4e1b87340303a3ec57e13be798f206bea96a10a Mon Sep 17 00:00:00 2001
+From: Camotoy <20743703+Camotoy@users.noreply.github.com>
+Date: Sat, 30 Oct 2021 15:05:54 -0400
+Subject: [PATCH] Fix endian coloring issues; fix effects not ticking
+
+---
+ .../client/particle/EffectRenderer.java       | 19 ++++++++++++++++++-
+ .../client/renderer/EntityRenderer.java       |  4 ++--
+ .../client/renderer/WorldRenderer.java        | 15 ++++++++-------
+ .../renderer/block/model/FaceBakery.java      |  8 +++++++-
+ src/minecraft/net/optifine/CustomGuis.java    |  2 +-
+ .../net/optifine/override/ChunkCacheOF.java   |  2 +-
+ .../optifine/OptiFineResourceLocator.java     |  2 +-
+ 7 files changed, 38 insertions(+), 14 deletions(-)
+
+diff --git a/src/minecraft/net/minecraft/client/particle/EffectRenderer.java b/src/minecraft/net/minecraft/client/particle/EffectRenderer.java
+index 4f504c6..06e5f1a 100644
+--- a/src/minecraft/net/minecraft/client/particle/EffectRenderer.java
++++ b/src/minecraft/net/minecraft/client/particle/EffectRenderer.java
+@@ -2,6 +2,8 @@ package net.minecraft.client.particle;
+ 
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Maps;
++
++import java.util.Arrays;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Random;
+@@ -28,6 +30,7 @@ import net.minecraft.util.MovingObjectPosition;
+ import net.minecraft.util.ReportedException;
+ import net.minecraft.util.ResourceLocation;
+ import net.minecraft.world.World;
++import net.optifine.Log;
+ import net.optifine.reflect.Reflector;
+ 
+ public class EffectRenderer
+@@ -187,8 +190,22 @@ public class EffectRenderer
+         }
+     }
+ 
+-    private void updateEffectAlphaLayer(List<EntityFX> param1)
++    private void updateEffectAlphaLayer(List<EntityFX> p_178925_1_)
+     {
++        List<EntityFX> list = Lists.<EntityFX>newArrayList();
++
++        for (int i = 0; i < p_178925_1_.size(); ++i)
++        {
++            EntityFX entityfx = (EntityFX)p_178925_1_.get(i);
++            this.tickParticle(entityfx);
++
++            if (entityfx.isDead)
++            {
++                list.add(entityfx);
++            }
++        }
++
++        p_178925_1_.removeAll(list);
+     }
+ 
+     private void tickParticle(final EntityFX p_178923_1_)
+diff --git a/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java b/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
+index bcb6855..038d408 100644
+--- a/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/EntityRenderer.java
+@@ -2190,10 +2190,10 @@ public class EntityRenderer implements IResourceManagerReloadListener
+     {
+         ScaledResolution scaledresolution = new ScaledResolution(this.mc);
+         GlStateManager.clear(256);
+-        GlStateManager.matrixMode(5889);
++        GlStateManager.matrixMode(GL11.GL_PROJECTION);
+         GlStateManager.loadIdentity();
+         GlStateManager.ortho(0.0D, scaledresolution.getScaledWidth_double(), scaledresolution.getScaledHeight_double(), 0.0D, 1000.0D, 3000.0D);
+-        GlStateManager.matrixMode(5888);
++        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+         GlStateManager.loadIdentity();
+         GlStateManager.translate(0.0F, 0.0F, -2000.0F);
+     }
+diff --git a/src/minecraft/net/minecraft/client/renderer/WorldRenderer.java b/src/minecraft/net/minecraft/client/renderer/WorldRenderer.java
+index aa25329..48fe51b 100644
+--- a/src/minecraft/net/minecraft/client/renderer/WorldRenderer.java
++++ b/src/minecraft/net/minecraft/client/renderer/WorldRenderer.java
+@@ -479,15 +479,15 @@ public class WorldRenderer
+         this.putColorRGBA(i, j, k, l, 255);
+     }
+ 
+-    public void putColorRGBA(int index, int red, int p_178972_3_, int p_178972_4_, int p_178972_5_)
++    public void putColorRGBA(int index, int red, int green, int blue, int alpha)
+     {
+         if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN)
+         {
+-            this.rawIntBuffer.put(index, p_178972_5_ << 24 | p_178972_4_ << 16 | p_178972_3_ << 8 | red);
++            this.rawIntBuffer.put(index, alpha << 24 | blue << 16 | green << 8 | red);
+         }
+         else
+         {
+-            this.rawIntBuffer.put(index, red << 24 | p_178972_3_ << 16 | p_178972_4_ << 8 | p_178972_5_);
++            this.rawIntBuffer.put(index, red << 24 | green << 16 | blue << 8 | alpha);
+         }
+     }
+ 
+@@ -541,20 +541,21 @@ public class WorldRenderer
+ 
+                 case UBYTE:
+                 case BYTE:
+-                    if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN)
+-                    {
++                    // I have no idea why this doesn't work, but I shall not complain
++                    //if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN)
++                    //{
+                         this.byteBuffer.put(i, (byte)p_181669_1_);
+                         this.byteBuffer.put(i + 1, (byte)p_181669_2_);
+                         this.byteBuffer.put(i + 2, (byte)p_181669_3_);
+                         this.byteBuffer.put(i + 3, (byte)p_181669_4_);
+-                    }
++                    /*}
+                     else
+                     {
+                         this.byteBuffer.put(i, (byte)p_181669_4_);
+                         this.byteBuffer.put(i + 1, (byte)p_181669_3_);
+                         this.byteBuffer.put(i + 2, (byte)p_181669_2_);
+                         this.byteBuffer.put(i + 3, (byte)p_181669_1_);
+-                    }
++                    }*/
+             }
+ 
+             this.func_181667_k();
+diff --git a/src/minecraft/net/minecraft/client/renderer/block/model/FaceBakery.java b/src/minecraft/net/minecraft/client/renderer/block/model/FaceBakery.java
+index 22bdac2..cc86581 100644
+--- a/src/minecraft/net/minecraft/client/renderer/block/model/FaceBakery.java
++++ b/src/minecraft/net/minecraft/client/renderer/block/model/FaceBakery.java
+@@ -15,6 +15,8 @@ import org.lwjgl.util.vector.Matrix4f;
+ import org.lwjgl.util.vector.Vector3f;
+ import org.lwjgl.util.vector.Vector4f;
+ 
++import java.nio.ByteOrder;
++
+ public class FaceBakery
+ {
+     private static final float field_178418_a = 1.0F / (float)Math.cos(0.39269909262657166D) - 1.0F;
+@@ -66,7 +68,11 @@ public class FaceBakery
+     {
+         float f = getFaceBrightness(facing);
+         int i = MathHelper.clamp_int((int)(f * 255.0F), 0, 255);
+-        return -16777216 | i << 16 | i << 8 | i;
++        if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
++            return -16777216 | i << 16 | i << 8 | i;
++        } else {
++            return i << 24 | i << 16 | i << 8 | 255;
++        }
+     }
+ 
+     public static float getFaceBrightness(EnumFacing p_178412_0_)
+diff --git a/src/minecraft/net/optifine/CustomGuis.java b/src/minecraft/net/optifine/CustomGuis.java
+index 0a7e0b5..0a408ab 100644
+--- a/src/minecraft/net/optifine/CustomGuis.java
++++ b/src/minecraft/net/optifine/CustomGuis.java
+@@ -326,7 +326,7 @@ public class CustomGuis
+ 
+     public static void setPlayerControllerOF(PlayerControllerOF playerControllerOF)
+     {
+-        playerControllerOF = playerControllerOF;
++        CustomGuis.playerControllerOF = playerControllerOF;
+     }
+ 
+     private static boolean isChristmas()
+diff --git a/src/minecraft/net/optifine/override/ChunkCacheOF.java b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+index 3fbc79b..250c63a 100644
+--- a/src/minecraft/net/optifine/override/ChunkCacheOF.java
++++ b/src/minecraft/net/optifine/override/ChunkCacheOF.java
+@@ -144,7 +144,7 @@ public class ChunkCacheOF implements IBlockAccess
+             this.blockStates = (IBlockState[])((IBlockState[])cacheBlockStates.allocate(this.arraySize));
+         }
+ 
+-        Arrays.fill(this.blockStates, (Object)null);
++        Arrays.fill(this.blockStates, (Object)null); //todo
+     }
+ 
+     public void renderFinish()
+diff --git a/src/minecraft/optifine/OptiFineResourceLocator.java b/src/minecraft/optifine/OptiFineResourceLocator.java
+index ad9aed5..d395fa9 100644
+--- a/src/minecraft/optifine/OptiFineResourceLocator.java
++++ b/src/minecraft/optifine/OptiFineResourceLocator.java
+@@ -8,7 +8,7 @@ public class OptiFineResourceLocator
+ 
+     public static void setResourceLocator(IOptiFineResourceLocator resourceLocator)
+     {
+-        resourceLocator = resourceLocator;
++        OptiFineResourceLocator.resourceLocator = resourceLocator;
+         Class oclass = OptiFineResourceLocator.class;
+         System.getProperties().put(oclass.getName() + ".class", oclass);
+     }
+-- 
+2.35.3
+
